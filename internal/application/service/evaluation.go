@@ -2,12 +2,17 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"runtime"
 	"sync"
 	"time"
 
+	repository "github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/buildinfo"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -24,6 +29,16 @@ qrels: qid -> pid
 arels: qid -> aid
 */
 
+const (
+	evaluationHeartbeatInterval = 10 * time.Second
+	// EvaluationStaleCutoff is the maximum allowed age of the last heartbeat
+	// before a pending/running run is considered interrupted at startup.
+	EvaluationStaleCutoff = 45 * time.Second
+)
+
+// ErrEvaluationTaskNotFound is returned when no run exists for the caller's tenant.
+var ErrEvaluationTaskNotFound = errors.New("evaluation task not found")
+
 // EvaluationService handles evaluation tasks for knowledge base and chat models
 type EvaluationService struct {
 	config               *config.Config                  // Application configuration
@@ -33,7 +48,7 @@ type EvaluationService struct {
 	sessionService       interfaces.SessionService       // Service for chat sessions
 	modelService         interfaces.ModelService         // Service for model operations
 
-	evaluationMemoryStorage *evaluationMemoryStorage // In-memory storage for evaluation tasks
+	evaluationRunRepository interfaces.EvaluationRunRepository // Persistent storage for evaluation runs
 }
 
 func NewEvaluationService(
@@ -43,8 +58,8 @@ func NewEvaluationService(
 	knowledgeService interfaces.KnowledgeService,
 	sessionService interfaces.SessionService,
 	modelService interfaces.ModelService,
+	evaluationRunRepository interfaces.EvaluationRunRepository,
 ) interfaces.EvaluationService {
-	evaluationMemoryStorage := newEvaluationMemoryStorage()
 	return &EvaluationService{
 		config:                  config,
 		dataset:                 dataset,
@@ -52,77 +67,58 @@ func NewEvaluationService(
 		knowledgeService:        knowledgeService,
 		sessionService:          sessionService,
 		modelService:            modelService,
-		evaluationMemoryStorage: evaluationMemoryStorage,
+		evaluationRunRepository: evaluationRunRepository,
 	}
-}
-
-// evaluationMemoryStorage stores evaluation tasks in memory with thread-safe access
-type evaluationMemoryStorage struct {
-	store map[string]*types.EvaluationDetail // Map of taskID to evaluation details
-	mu    *sync.RWMutex                      // Read-write lock for concurrent access
-}
-
-func newEvaluationMemoryStorage() *evaluationMemoryStorage {
-	res := &evaluationMemoryStorage{
-		store: make(map[string]*types.EvaluationDetail),
-		mu:    &sync.RWMutex{},
-	}
-	return res
-}
-
-func (e *evaluationMemoryStorage) register(params *types.EvaluationDetail) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	logger.Infof(context.Background(), "Registering evaluation task: %s", params.Task.ID)
-	e.store[params.Task.ID] = params
-}
-
-func (e *evaluationMemoryStorage) get(taskID string) (*types.EvaluationDetail, error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-	logger.Infof(context.Background(), "Getting evaluation task: %s", taskID)
-	res, ok := e.store[taskID]
-	if !ok {
-		return nil, errors.New("task not found")
-	}
-	return res, nil
-}
-
-func (e *evaluationMemoryStorage) update(taskID string, fn func(params *types.EvaluationDetail)) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	params, ok := e.store[taskID]
-	if !ok {
-		return errors.New("task not found")
-	}
-	fn(params)
-	return nil
 }
 
 func (e *EvaluationService) EvaluationResult(ctx context.Context, taskID string) (*types.EvaluationDetail, error) {
 	logger.Info(ctx, "Start getting evaluation result")
 	logger.Infof(ctx, "Task ID: %s", taskID)
 
-	detail, err := e.evaluationMemoryStorage.get(taskID)
+	tenantID := types.MustTenantIDFromContext(ctx)
+	run, err := e.evaluationRunRepository.GetByID(ctx, tenantID, taskID)
 	if err != nil {
+		if errors.Is(err, repository.ErrEvaluationRunNotFound) {
+			return nil, ErrEvaluationTaskNotFound
+		}
 		logger.Errorf(ctx, "Failed to get evaluation task: %v", err)
 		return nil, err
 	}
 
-	tenantID := types.MustTenantIDFromContext(ctx)
-	logger.Infof(
-		ctx,
-		"Checking tenant ID match, task tenant ID: %d, current tenant ID: %d",
-		detail.Task.TenantID, tenantID,
-	)
+	logger.Info(ctx, "Evaluation result retrieved successfully")
+	return e.evaluationRunToDetail(run)
+}
 
-	if tenantID != detail.Task.TenantID {
-		logger.Error(ctx, "Tenant ID mismatch")
-		return nil, errors.New("tenant ID does not match")
+func (e *EvaluationService) evaluationRunToDetail(run *types.EvaluationRun) (*types.EvaluationDetail, error) {
+	var params types.ChatManage
+	if len(run.Params) > 0 {
+		if err := json.Unmarshal(run.Params, &params); err != nil {
+			return nil, fmt.Errorf("evaluation run: decode params: %w", err)
+		}
 	}
 
-	logger.Info(ctx, "Evaluation result retrieved successfully")
-	return detail, nil
+	var metric *types.MetricResult
+	if len(run.Metric) > 0 {
+		metric = &types.MetricResult{}
+		if err := json.Unmarshal(run.Metric, metric); err != nil {
+			return nil, fmt.Errorf("evaluation run: decode metric: %w", err)
+		}
+	}
+
+	return &types.EvaluationDetail{
+		Task: &types.EvaluationTask{
+			ID:        run.ID,
+			TenantID:  run.TenantID,
+			DatasetID: run.DatasetID,
+			StartTime: run.StartTime,
+			Status:    run.Status,
+			ErrMsg:    run.ErrMsg,
+			Total:     run.Total,
+			Finished:  run.Finished,
+		},
+		Params: &params,
+		Metric: metric,
+	}, nil
 }
 
 // Evaluation starts a new evaluation task with given parameters
@@ -141,6 +137,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
+	var embeddingModelID string
 	// Handle knowledge base creation if not provided
 	if knowledgeBaseID == "" {
 		logger.Info(ctx, "No knowledge base ID provided, creating new knowledge base")
@@ -152,7 +149,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 			return nil, err
 		}
 
-		var embeddingModelID, llmModelID string
+		var llmModelID string
 		for _, model := range models {
 			if model == nil {
 				continue
@@ -179,6 +176,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 			logger.Errorf(ctx, "Failed to create knowledge base: %v", err)
 			return nil, err
 		}
+		embeddingModelID = kb.EmbeddingModelID
 		knowledgeBaseID = kb.ID
 		logger.Infof(ctx, "Created new knowledge base with ID: %s", knowledgeBaseID)
 	} else {
@@ -200,6 +198,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 			logger.Errorf(ctx, "Failed to create knowledge base: %v", err)
 			return nil, err
 		}
+		embeddingModelID = kb.EmbeddingModelID
 		knowledgeBaseID = kb.ID
 		logger.Infof(ctx, "Created new knowledge base with ID: %s based on existing one", knowledgeBaseID)
 	}
@@ -257,6 +256,35 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	logger.Infof(ctx, "Generated task ID: %s", taskID)
 
 	// Prepare evaluation detail with all parameters
+	params := &types.ChatManage{
+		PipelineRequest: types.PipelineRequest{
+			VectorThreshold:  e.config.Conversation.VectorThreshold,
+			KeywordThreshold: e.config.Conversation.KeywordThreshold,
+			EmbeddingTopK:    e.config.Conversation.EmbeddingTopK,
+			MaxRounds:        e.config.Conversation.MaxRounds,
+			RerankModelID:    rerankModelID,
+			RerankTopK:       e.config.Conversation.RerankTopK,
+			RerankThreshold:  e.config.Conversation.RerankThreshold,
+			ChatModelID:      chatModelID,
+			SummaryConfig: types.SummaryConfig{
+				MaxTokens:           e.config.Conversation.Summary.MaxTokens,
+				RepeatPenalty:       e.config.Conversation.Summary.RepeatPenalty,
+				TopK:                e.config.Conversation.Summary.TopK,
+				TopP:                e.config.Conversation.Summary.TopP,
+				Prompt:              e.config.Conversation.Summary.Prompt,
+				ContextTemplate:     e.config.Conversation.Summary.ContextTemplate,
+				FrequencyPenalty:    e.config.Conversation.Summary.FrequencyPenalty,
+				PresencePenalty:     e.config.Conversation.Summary.PresencePenalty,
+				NoMatchPrefix:       e.config.Conversation.Summary.NoMatchPrefix,
+				Temperature:         e.config.Conversation.Summary.Temperature,
+				Seed:                e.config.Conversation.Summary.Seed,
+				MaxCompletionTokens: e.config.Conversation.Summary.MaxCompletionTokens,
+			},
+			FallbackResponse:    e.config.Conversation.FallbackResponse,
+			RewritePromptSystem: e.config.Conversation.RewritePromptSystem,
+			RewritePromptUser:   e.config.Conversation.RewritePromptUser,
+		},
+	}
 	detail := &types.EvaluationDetail{
 		Task: &types.EvaluationTask{
 			ID:        taskID,
@@ -265,40 +293,48 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 			Status:    types.EvaluationStatuePending,
 			StartTime: time.Now(),
 		},
-		Params: &types.ChatManage{
-			PipelineRequest: types.PipelineRequest{
-				VectorThreshold:  e.config.Conversation.VectorThreshold,
-				KeywordThreshold: e.config.Conversation.KeywordThreshold,
-				EmbeddingTopK:    e.config.Conversation.EmbeddingTopK,
-				MaxRounds:        e.config.Conversation.MaxRounds,
-				RerankModelID:    rerankModelID,
-				RerankTopK:       e.config.Conversation.RerankTopK,
-				RerankThreshold:  e.config.Conversation.RerankThreshold,
-				ChatModelID:      chatModelID,
-				SummaryConfig: types.SummaryConfig{
-					MaxTokens:           e.config.Conversation.Summary.MaxTokens,
-					RepeatPenalty:       e.config.Conversation.Summary.RepeatPenalty,
-					TopK:                e.config.Conversation.Summary.TopK,
-					TopP:                e.config.Conversation.Summary.TopP,
-					Prompt:              e.config.Conversation.Summary.Prompt,
-					ContextTemplate:     e.config.Conversation.Summary.ContextTemplate,
-					FrequencyPenalty:    e.config.Conversation.Summary.FrequencyPenalty,
-					PresencePenalty:     e.config.Conversation.Summary.PresencePenalty,
-					NoMatchPrefix:       e.config.Conversation.Summary.NoMatchPrefix,
-					Temperature:         e.config.Conversation.Summary.Temperature,
-					Seed:                e.config.Conversation.Summary.Seed,
-					MaxCompletionTokens: e.config.Conversation.Summary.MaxCompletionTokens,
-				},
-				FallbackResponse:    e.config.Conversation.FallbackResponse,
-				RewritePromptSystem: e.config.Conversation.RewritePromptSystem,
-				RewritePromptUser:   e.config.Conversation.RewritePromptUser,
-			},
-		},
+		Params: params,
 	}
 
-	// Store evaluation task in memory storage
-	logger.Info(ctx, "Registering evaluation task")
-	e.evaluationMemoryStorage.register(detail)
+	paramsJSON, err := json.Marshal(sanitizeEvaluationParams(params))
+	if err != nil {
+		return nil, fmt.Errorf("evaluation: encode params: %w", err)
+	}
+	snapshot := types.EvaluationConfigSnapshot{
+		Dataset: types.DatasetSnapshot{ID: datasetID},
+		Models:  e.buildModelSnapshots(ctx, embeddingModelID, chatModelID, rerankModelID),
+		Version: types.VersionSignature{
+			AppVersion: buildinfo.Version,
+			GitCommit:  buildinfo.CommitID,
+			GitDirty:   buildinfo.IsGitDirty(),
+			GoVersion:  buildinfo.GoVersion,
+		},
+	}
+	snapshotJSON, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("evaluation: encode config snapshot: %w", err)
+	}
+	configHash, err := e.computeConfigHash(params, snapshot.Dataset, snapshot.Models)
+	if err != nil {
+		return nil, fmt.Errorf("evaluation: compute config hash: %w", err)
+	}
+
+	run := &types.EvaluationRun{
+		ID:             taskID,
+		TenantID:       tenantID,
+		DatasetID:      datasetID,
+		Status:         types.EvaluationStatuePending,
+		StartTime:      time.Now(),
+		Params:         paramsJSON,
+		ConfigHash:     configHash,
+		ConfigSnapshot: snapshotJSON,
+		TemporaryKBID:  knowledgeBaseID,
+	}
+	logger.Info(ctx, "Persisting evaluation task")
+	if err := e.evaluationRunRepository.Create(ctx, run); err != nil {
+		logger.Errorf(ctx, "Failed to persist evaluation task: %v", err)
+		return nil, err
+	}
 
 	// Start evaluation in background goroutine
 	logger.Info(ctx, "Starting evaluation in background")
@@ -307,21 +343,103 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 		newCtx := logger.CloneContext(ctx)
 		logger.Infof(newCtx, "Background evaluation started for task ID: %s", taskID)
 
-		// Update task status to running
+		// CAS: pending -> running; anything else means the run was already
+		// terminal (e.g. marked interrupted by a concurrent restart scan).
+		ok, err := e.evaluationRunRepository.TransitionStatus(
+			newCtx,
+			taskID,
+			[]types.EvaluationStatue{types.EvaluationStatuePending},
+			types.EvaluationStatueRunning,
+			"",
+		)
+		if err != nil {
+			logger.Errorf(newCtx, "Failed to start evaluation task: %v", err)
+			return
+		}
+		if !ok {
+			logger.Warnf(newCtx, "Evaluation task no longer pending, skipping execution: %s", taskID)
+			return
+		}
 		detail.Task.Status = types.EvaluationStatueRunning
 		logger.Info(newCtx, "Evaluation task status set to running")
 
+		heartbeatCtx, stopHeartbeat := context.WithCancel(newCtx)
+		go e.runHeartbeat(heartbeatCtx, taskID)
+
 		// Execute actual evaluation
 		if err := e.EvalDataset(newCtx, detail, knowledgeBaseID); err != nil {
+			stopHeartbeat()
 			detail.Task.Status = types.EvaluationStatueFailed
 			detail.Task.ErrMsg = err.Error()
+			if _, transitionErr := e.evaluationRunRepository.TransitionStatus(
+				newCtx,
+				taskID,
+				[]types.EvaluationStatue{types.EvaluationStatueRunning},
+				types.EvaluationStatueFailed,
+				err.Error(),
+			); transitionErr != nil {
+				logger.Errorf(newCtx, "Failed to persist evaluation failure: %v", transitionErr)
+			}
 			logger.Errorf(newCtx, "Evaluation task failed: %v, task ID: %s", err, taskID)
+			return
+		}
+		stopHeartbeat()
+
+		metricJSON, err := json.Marshal(detail.Metric)
+		if err != nil {
+			detail.Task.Status = types.EvaluationStatueFailed
+			detail.Task.ErrMsg = err.Error()
+			if _, transitionErr := e.evaluationRunRepository.TransitionStatus(
+				newCtx,
+				taskID,
+				[]types.EvaluationStatue{types.EvaluationStatueRunning},
+				types.EvaluationStatueFailed,
+				err.Error(),
+			); transitionErr != nil {
+				logger.Errorf(newCtx, "Failed to persist evaluation failure: %v", transitionErr)
+			}
+			logger.Errorf(newCtx, "Failed to encode evaluation metric: %v", err)
+			return
+		}
+		if err := e.evaluationRunRepository.UpdateProgress(
+			newCtx,
+			taskID,
+			detail.Task.Finished,
+			detail.Task.Total,
+			metricJSON,
+		); err != nil {
+			detail.Task.Status = types.EvaluationStatueFailed
+			detail.Task.ErrMsg = err.Error()
+			if _, transitionErr := e.evaluationRunRepository.TransitionStatus(
+				newCtx,
+				taskID,
+				[]types.EvaluationStatue{types.EvaluationStatueRunning},
+				types.EvaluationStatueFailed,
+				err.Error(),
+			); transitionErr != nil {
+				logger.Errorf(newCtx, "Failed to persist evaluation failure: %v", transitionErr)
+			}
+			logger.Errorf(newCtx, "Failed to persist final evaluation metric: %v", err)
 			return
 		}
 
 		// Mark task as completed successfully
+		ok, err = e.evaluationRunRepository.TransitionStatus(
+			newCtx,
+			taskID,
+			[]types.EvaluationStatue{types.EvaluationStatueRunning},
+			types.EvaluationStatueSuccess,
+			"",
+		)
+		if err != nil {
+			logger.Errorf(newCtx, "Failed to persist evaluation success: %v", err)
+			return
+		}
+		if !ok {
+			logger.Warnf(newCtx, "Evaluation task was not running, skipping success transition: %s", taskID)
+			return
+		}
 		logger.Infof(newCtx, "Evaluation task completed successfully, task ID: %s", taskID)
-		detail.Task.Status = types.EvaluationStatueSuccess
 	}()
 
 	logger.Infof(ctx, "Evaluation task created successfully, task ID: %s", taskID)
@@ -342,11 +460,17 @@ func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.Evalu
 	}
 	logger.Infof(ctx, "Dataset retrieved successfully with %d QA pairs", len(dataset))
 
-	// Update total QA pairs count in task details
-	e.evaluationMemoryStorage.update(detail.Task.ID, func(params *types.EvaluationDetail) {
-		params.Task.Total = len(dataset)
-		logger.Infof(ctx, "Updated task total to %d QA pairs", params.Task.Total)
-	})
+	detail.Task.Total = len(dataset)
+	if err := e.evaluationRunRepository.SetDatasetHash(
+		ctx,
+		detail.Task.ID,
+		computeDatasetHash(dataset),
+		len(dataset),
+	); err != nil {
+		logger.Errorf(ctx, "Failed to persist dataset hash: %v", err)
+		return err
+	}
+	logger.Infof(ctx, "Updated task total to %d QA pairs", len(dataset))
 
 	// Extract and organize passages from dataset
 	passages := getPassageList(dataset)
@@ -429,11 +553,24 @@ func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.Evalu
 			finished += 1
 			metricResult := metricHook.MetricResult()
 			mu.Unlock()
-			e.evaluationMemoryStorage.update(detail.Task.ID, func(params *types.EvaluationDetail) {
-				params.Metric = metricResult
-				params.Task.Finished = finished
-				logger.Infof(ctx, "Updated task progress: %d/%d completed", finished, params.Task.Total)
-			})
+			metricJSON, err := json.Marshal(metricResult)
+			if err != nil {
+				logger.Errorf(ctx, "Failed to encode evaluation metric: %v", err)
+				return err
+			}
+			detail.Task.Finished = finished
+			detail.Metric = metricResult
+			if err := e.evaluationRunRepository.UpdateProgress(
+				ctx,
+				detail.Task.ID,
+				finished,
+				len(dataset),
+				metricJSON,
+			); err != nil {
+				logger.Errorf(ctx, "Failed to persist evaluation progress: %v", err)
+				return err
+			}
+			logger.Infof(ctx, "Updated task progress: %d/%d completed", finished, len(dataset))
 			return nil
 		})
 	}
@@ -445,14 +582,145 @@ func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.Evalu
 		return err
 	}
 
-	// Final update of evaluation metrics
-	e.evaluationMemoryStorage.update(detail.Task.ID, func(params *types.EvaluationDetail) {
-		params.Metric = metricHook.MetricResult()
-		params.Task.Finished = finished
-	})
+	metricResult := metricHook.MetricResult()
+	metricJSON, err := json.Marshal(metricResult)
+	if err != nil {
+		return err
+	}
+	detail.Task.Finished = finished
+	detail.Metric = metricResult
+	if err := e.evaluationRunRepository.UpdateProgress(
+		ctx,
+		detail.Task.ID,
+		finished,
+		len(dataset),
+		metricJSON,
+	); err != nil {
+		logger.Errorf(ctx, "Failed to persist final evaluation progress: %v", err)
+		return err
+	}
 
 	logger.Infof(ctx, "Dataset evaluation completed successfully, task ID: %s", detail.Task.ID)
 	return nil
+}
+
+// ListEvaluationRuns returns tenant-scoped historical runs ordered by
+// creation time descending.
+func (e *EvaluationService) ListEvaluationRuns(
+	ctx context.Context,
+	status *types.EvaluationStatue,
+	p *types.Pagination,
+) (*types.PageResult, error) {
+	if p == nil {
+		p = &types.Pagination{}
+	}
+	tenantID := types.MustTenantIDFromContext(ctx)
+	runs, total, err := e.evaluationRunRepository.List(ctx, tenantID, status, p)
+	if err != nil {
+		return nil, err
+	}
+	return types.NewPageResult(total, p, runs), nil
+}
+
+func (e *EvaluationService) runHeartbeat(ctx context.Context, taskID string) {
+	ticker := time.NewTicker(evaluationHeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := e.evaluationRunRepository.UpdateHeartbeat(ctx, taskID, time.Now()); err != nil {
+				logger.Errorf(ctx, "Failed to update evaluation heartbeat: %v", err)
+			}
+		}
+	}
+}
+
+func (e *EvaluationService) buildModelSnapshots(
+	ctx context.Context,
+	embeddingID string,
+	chatID string,
+	rerankID string,
+) []types.ModelSnapshot {
+	type modelRef struct {
+		id  string
+		typ string
+	}
+	refs := []modelRef{
+		{embeddingID, string(types.ModelTypeEmbedding)},
+		{chatID, string(types.ModelTypeKnowledgeQA)},
+		{rerankID, string(types.ModelTypeRerank)},
+	}
+	snapshots := make([]types.ModelSnapshot, 0, len(refs))
+	for _, ref := range refs {
+		if ref.id == "" {
+			continue
+		}
+		snapshot := types.ModelSnapshot{ID: ref.id, Type: ref.typ}
+		model, err := e.modelService.GetModelByID(ctx, ref.id)
+		if err != nil {
+			logger.Warnf(ctx, "Failed to load model metadata for snapshot, model: %s: %v", ref.id, err)
+		} else if model != nil {
+			snapshot.Name = model.Name
+			snapshot.Provider = model.Parameters.Provider
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	return snapshots
+}
+
+type configHashPayload struct {
+	Params  *types.ChatManage     `json:"params"`
+	Dataset types.DatasetSnapshot `json:"dataset"`
+	Models  []types.ModelSnapshot `json:"models"`
+}
+
+func (e *EvaluationService) computeConfigHash(
+	params *types.ChatManage,
+	dataset types.DatasetSnapshot,
+	models []types.ModelSnapshot,
+) (string, error) {
+	if models == nil {
+		models = []types.ModelSnapshot{}
+	}
+	payload := configHashPayload{
+		Params:  params,
+		Dataset: dataset,
+		Models:  models,
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:]), nil
+}
+
+func computeDatasetHash(dataset []*types.QAPair) string {
+	if dataset == nil {
+		dataset = []*types.QAPair{}
+	}
+	encoded, err := json.Marshal(dataset)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
+func sanitizeEvaluationParams(params *types.ChatManage) *types.ChatManage {
+	if params == nil {
+		return nil
+	}
+	cloned := params.Clone()
+	cloned.SummaryConfig.Prompt = ""
+	cloned.SummaryConfig.ContextTemplate = ""
+	cloned.SummaryConfig.NoMatchPrefix = ""
+	cloned.RewritePromptSystem = ""
+	cloned.RewritePromptUser = ""
+	cloned.FallbackPrompt = ""
+	return cloned
 }
 
 // getPassageList extracts and organizes passages from QA pairs

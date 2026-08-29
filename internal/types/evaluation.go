@@ -31,11 +31,69 @@ func newJieba() *gojieba.Jieba {
 type EvaluationStatue int
 
 const (
-	EvaluationStatuePending EvaluationStatue = iota // Task is waiting to start
-	EvaluationStatueRunning                         // Task is in progress
-	EvaluationStatueSuccess                         // Task completed successfully
-	EvaluationStatueFailed                          // Task failed
+	EvaluationStatuePending     EvaluationStatue = iota // Task is waiting to start
+	EvaluationStatueRunning                             // Task is in progress
+	EvaluationStatueSuccess                             // Task completed successfully
+	EvaluationStatueFailed                              // Task failed
+	EvaluationStatueInterrupted                         // Task interrupted by service restart
 )
+
+// EvaluationRun is the persisted representation of an evaluation task.
+type EvaluationRun struct {
+	ID             string           `gorm:"primaryKey;type:varchar(128)" json:"id"`
+	TenantID       uint64           `gorm:"index" json:"tenant_id"`
+	DatasetID      string           `gorm:"type:varchar(128)" json:"dataset_id"`
+	Status         EvaluationStatue `json:"status"`
+	StartTime      time.Time        `json:"start_time"`
+	ErrMsg         string           `json:"err_msg"`
+	Total          int              `json:"total"`
+	Finished       int              `json:"finished"`
+	Params         json.RawMessage  `gorm:"type:jsonb;default:'{}'" json:"params"`
+	Metric         json.RawMessage  `gorm:"type:jsonb" json:"metric,omitempty"`
+	HeartbeatAt    *time.Time       `json:"heartbeat_at,omitempty"`
+	FinishedAt     *time.Time       `json:"finished_at,omitempty"`
+	ConfigHash     string           `gorm:"type:varchar(64)" json:"config_hash"`
+	ConfigSnapshot json.RawMessage  `gorm:"type:jsonb;default:'{}'" json:"config_snapshot"`
+	TemporaryKBID  string           `gorm:"type:varchar(128)" json:"temporary_kb_id"`
+	CreatedAt      time.Time        `json:"created_at"`
+	UpdatedAt      time.Time        `json:"updated_at"`
+}
+
+// TableName returns the database table name for EvaluationRun.
+func (EvaluationRun) TableName() string {
+	return "evaluation_runs"
+}
+
+// EvaluationConfigSnapshot captures the effective, non-sensitive evaluation
+// configuration so a historical run can be explained and compared.
+type EvaluationConfigSnapshot struct {
+	Dataset DatasetSnapshot  `json:"dataset"`
+	Models  []ModelSnapshot  `json:"models"`
+	Version VersionSignature `json:"version"`
+}
+
+// DatasetSnapshot identifies the dataset and its content fingerprint.
+type DatasetSnapshot struct {
+	ID          string `json:"id"`
+	SHA256      string `json:"sha256"`
+	SampleCount int    `json:"sample_count"`
+}
+
+// ModelSnapshot contains only the semantic model identity, never credentials.
+type ModelSnapshot struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Provider string `json:"provider"`
+	Type     string `json:"type"`
+}
+
+// VersionSignature records the build provenance of the application.
+type VersionSignature struct {
+	AppVersion string `json:"app_version"`
+	GitCommit  string `json:"git_commit"`
+	GitDirty   bool   `json:"git_dirty"`
+	GoVersion  string `json:"go_version"`
+}
 
 // EvaluationTask contains information about an evaluation task
 type EvaluationTask struct {

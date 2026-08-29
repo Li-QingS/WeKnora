@@ -14,6 +14,7 @@ import (
 // 000041 task queue, 000053 system settings, 000055 processing spans,
 // 000063 knowledge multi-tags.
 var versionedSQLiteTables = []string{
+	"evaluation_runs",
 	"task_pending_ops",
 	"task_dead_letters",
 	"system_settings",
@@ -31,9 +32,12 @@ var versionedSQLiteColumns = map[string][]string{
 	"tenant_invitations": {"token", "accepted_count"},        // 000054
 	"embed_channels":     {"allow_memory"},                   // 000060
 	"mcp_oauth_tokens":   {"principal_type", "principal_id"}, // 000064
+	"evaluation_runs": {
+		"heartbeat_at", "finished_at", "config_hash", "config_snapshot", "temporary_kb_id",
+	}, // 000088
 }
 
-const expectedSQLiteMigrationVersion = 12
+const expectedSQLiteMigrationVersion = 13
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

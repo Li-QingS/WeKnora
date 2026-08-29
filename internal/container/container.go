@@ -180,6 +180,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewMemoryRepository))
 	must(container.Provide(repository.NewTaskPendingOpsRepository))
 	must(container.Provide(repository.NewTaskDeadLetterRepository))
+	must(container.Provide(repository.NewEvaluationRunRepository))
 
 	// MCP manager for managing MCP client connections
 	logger.Debugf(ctx, "[Container] Registering MCP manager...")
@@ -763,6 +764,11 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 		logger.Infof(context.Background(), "Auto-migration is disabled (AUTO_MIGRATE=false)")
 	}
 
+	// Mark evaluation runs whose heartbeat is stale as interrupted. A scan
+	// failure must never block startup; the run simply stays visible with its
+	// last known progress until a later restart succeeds.
+	markStaleEvaluationRuns(db)
+
 	// Get underlying SQL DB object
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -781,6 +787,19 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	sqlDB.SetConnMaxLifetime(time.Duration(10) * time.Minute)
 
 	return db, nil
+}
+
+func markStaleEvaluationRuns(db *gorm.DB) {
+	ctx := context.Background()
+	cutoff := time.Now().Add(-service.EvaluationStaleCutoff)
+	affected, err := repository.NewEvaluationRunRepository(db).MarkStaleInterrupted(ctx, cutoff)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to mark stale evaluation runs as interrupted: %v", err)
+		return
+	}
+	if affected > 0 {
+		logger.Infof(ctx, "Marked %d stale evaluation runs as interrupted", affected)
+	}
 }
 
 // resolveStorageProviderPending replaces the "__pending_env__" sentinel in

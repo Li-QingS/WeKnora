@@ -8,6 +8,7 @@ EDITION="${EDITION:-standard}"
 COMMIT_ID="unknown"
 BUILD_TIME="unknown"
 GO_VERSION="unknown"
+GIT_DIRTY="true"
 
 # 获取版本号
 if [ -f "VERSION" ]; then
@@ -37,6 +38,15 @@ if command -v go >/dev/null 2>&1; then
     GO_VERSION=$(go version 2>/dev/null || echo "unknown")
 fi
 
+# 检测工作区是否有未提交改动（含未跟踪文件）
+if command -v git >/dev/null 2>&1 && git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if git status --porcelain 2>/dev/null | grep -q .; then
+        GIT_DIRTY="true"
+    else
+        GIT_DIRTY="false"
+    fi
+fi
+
 # 根据参数输出不同格式
 case "${1:-env}" in
     "env")
@@ -46,6 +56,7 @@ case "${1:-env}" in
         echo "COMMIT_ID=$COMMIT_ID"
         echo "BUILD_TIME=\"$BUILD_TIME\""
         echo "GO_VERSION=\"$GO_VERSION\""
+        echo "GIT_DIRTY=$GIT_DIRTY"
         ;;
     "json")
         # 输出JSON格式
@@ -55,7 +66,8 @@ case "${1:-env}" in
   "edition": "$EDITION",
   "commit_id": "$COMMIT_ID",
   "build_time": "$BUILD_TIME",
-  "go_version": "$GO_VERSION"
+  "go_version": "$GO_VERSION",
+  "git_dirty": "$GIT_DIRTY"
 }
 EOF
         ;;
@@ -65,10 +77,11 @@ EOF
         echo "--build-arg COMMIT_ID_ARG=$COMMIT_ID"
         echo "--build-arg BUILD_TIME_ARG=$BUILD_TIME"
         echo "--build-arg GO_VERSION_ARG=$GO_VERSION"
+        echo "--build-arg GIT_DIRTY_ARG=$GIT_DIRTY"
         ;;
     "ldflags")
         # 输出Go ldflags格式
-        echo "-X 'github.com/Tencent/WeKnora/internal/handler.Version=$VERSION' -X 'github.com/Tencent/WeKnora/internal/handler.Edition=$EDITION' -X 'github.com/Tencent/WeKnora/internal/handler.CommitID=$COMMIT_ID' -X 'github.com/Tencent/WeKnora/internal/handler.BuildTime=$BUILD_TIME' -X 'github.com/Tencent/WeKnora/internal/handler.GoVersion=$GO_VERSION'"
+        echo "-X 'github.com/Tencent/WeKnora/internal/handler.Version=$VERSION' -X 'github.com/Tencent/WeKnora/internal/handler.Edition=$EDITION' -X 'github.com/Tencent/WeKnora/internal/handler.CommitID=$COMMIT_ID' -X 'github.com/Tencent/WeKnora/internal/handler.BuildTime=$BUILD_TIME' -X 'github.com/Tencent/WeKnora/internal/handler.GoVersion=$GO_VERSION' -X 'github.com/Tencent/WeKnora/internal/buildinfo.Version=$VERSION' -X 'github.com/Tencent/WeKnora/internal/buildinfo.CommitID=$COMMIT_ID' -X 'github.com/Tencent/WeKnora/internal/buildinfo.GitDirty=$GIT_DIRTY' -X 'github.com/Tencent/WeKnora/internal/buildinfo.GoVersion=$GO_VERSION'"
         ;;
     "info")
         # 输出信息格式
@@ -77,6 +90,7 @@ EOF
         echo "Commit ID: $COMMIT_ID"
         echo "构建时间: $BUILD_TIME"
         echo "Go版本: $GO_VERSION"
+        echo "工作区是否脏: $GIT_DIRTY"
         ;;
     *)
         echo "用法: $0 [env|json|docker-args|ldflags|info]"

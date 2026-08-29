@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -127,5 +128,60 @@ func (e *EvaluationHandler) GetEvaluationResult(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    result,
+	})
+}
+
+// GetEvaluationRuns godoc
+// @Summary      获取评测历史列表
+// @Description  按租户分页查询评测运行记录，可按状态筛选
+// @Tags         评估
+// @Accept       json
+// @Produce      json
+// @Param        page       query     int  false  "页码"
+// @Param        page_size  query     int  false  "每页数量"
+// @Param        status     query     int  false  "状态筛选（0=pending,1=running,2=success,3=failed,4=interrupted）"
+// @Success      200        {object}  map[string]interface{}  "评测历史列表"
+// @Failure      400        {object}  errors.AppError         "请求参数错误"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /evaluation/runs [get]
+func (e *EvaluationHandler) GetEvaluationRuns(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	logger.Info(ctx, "Start retrieving evaluation runs")
+
+	var pagination types.Pagination
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		logger.Error(ctx, "Failed to parse pagination parameters", err)
+		c.Error(errors.NewBadRequestError("Invalid pagination parameters").WithDetails(err.Error()))
+		return
+	}
+
+	var status *types.EvaluationStatue
+	if raw := c.Query("status"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < int(types.EvaluationStatuePending) || value > int(types.EvaluationStatueInterrupted) {
+			logger.Error(ctx, "Invalid status filter", err)
+			c.Error(errors.NewBadRequestError("Invalid status filter"))
+			return
+		}
+		parsed := types.EvaluationStatue(value)
+		status = &parsed
+	}
+
+	result, err := e.evaluationService.ListEvaluationRuns(ctx, status, &pagination)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	logger.Infof(ctx, "Evaluation runs retrieved successfully, total: %d", result.Total)
+	c.JSON(http.StatusOK, gin.H{
+		"success":   true,
+		"data":      result.Data,
+		"total":     result.Total,
+		"page":      result.Page,
+		"page_size": result.PageSize,
 	})
 }
