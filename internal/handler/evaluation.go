@@ -1,9 +1,11 @@
 package handler
 
 import (
+	stderrors "errors"
 	"net/http"
 	"strconv"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -119,6 +121,10 @@ func (e *EvaluationHandler) GetEvaluationResult(c *gin.Context) {
 
 	result, err := e.evaluationService.EvaluationResult(ctx, secutils.SanitizeForLog(request.TaskID))
 	if err != nil {
+		if stderrors.Is(err, service.ErrEvaluationTaskNotFound) {
+			c.Error(errors.NewNotFoundError("Evaluation task not found"))
+			return
+		}
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
