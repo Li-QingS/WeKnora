@@ -1,0 +1,96 @@
+name: RAG Quality Gate
+
+# Runs the evaluation quality gate on PRs that touch evaluation-related
+# paths. With real service secrets configured it runs a live evaluation and
+# compares against the committed baseline; without secrets it runs the
+# comparator self-test so the gate logic is still exercised on every PR.
+
+on:
+  pull_request:
+    paths:
+      - "internal/**"
+      - "config/**"
+      - "dataset/**"
+      - "migrations/**"
+      - "evaluation/**"
+      - "cli/cmd/eval/**"
+      - "cli/internal/evalrunner/**"
+      - "Makefile"
+      - ".github/workflows/rag-quality-gate.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+  GOPROXY: https://proxy.golang.org,direct
+
+jobs:
+  quality:
+    name: evaluation quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: cli/go.sum
+
+      - name: Build CLI
+        run: make -C cli build
+
+      - name: Secrets present
+        id: secrets
+        env:
+          EVAL_HOST: ${{ secrets.WEKNORA_EVAL_HOST }}
+          EVAL_TOKEN: ${{ secrets.WEKNORA_EVAL_TOKEN }}
+        run: |
+          if [ -z "$EVAL_HOST" ] || [ -z "$EVAL_TOKEN" ]; then
+            echo "::warning::WEKNORA_EVAL_HOST or WEKNORA_EVAL_TOKEN not set; running comparator self-test only."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run real quality gate
+        if: steps.secrets.outputs.skip == 'false'
+        env:
+          WEKNORA_HOST: ${{ secrets.WEKNORA_EVAL_HOST }}
+          WEKNORA_TOKEN: ${{ secrets.WEKNORA_EVAL_TOKEN }}
+        run: |
+          make eval-ci CONFIG=./evaluation/configs/default.yaml \
+            BASELINE=./evaluation/baselines/demo.yaml
+
+      - name: Comparator self-test
+        if: steps.secrets.outputs.skip == 'true'
+        run: |
+          set -e
+          ./cli/bin/weknora eval compare \
+            --result evaluation/fixtures/evaluation-result-pass.json \
+            --baseline evaluation/baselines/demo.yaml
+          set +e
+          ./cli/bin/weknora eval compare \
+            --result evaluation/fixtures/evaluation-result-degraded.json \
+            --baseline evaluation/baselines/demo.yaml
+          code=$?
+          set -e
+          if [ "$code" -ne 2 ]; then
+            echo "degraded fixture expected exit 2, got $code"
+            exit 1
+          fi
+
+      - name: Upload evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-report
+          path: artifacts/evaluation/**
+          if-no-files-found: ignore

@@ -28,6 +28,20 @@ type EvalReport struct {
 	Version     map[string]any `json:"version,omitempty"`
 	Reproduce   string         `json:"reproduce"`
 	GeneratedAt string         `json:"generated_at"`
+	Comparison  *Comparison    `json:"comparison,omitempty"`
+}
+
+// LoadResult reads an evaluation-result.json written by WriteReports.
+func LoadResult(path string) (*EvalReport, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("%w: read result %s: %v", ErrInvalidConfig, path, err)
+	}
+	var report EvalReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return nil, fmt.Errorf("%w: parse result %s: %v", ErrInvalidConfig, path, err)
+	}
+	return &report, nil
 }
 
 // DatasetReport identifies the dataset used by a run.
@@ -164,6 +178,20 @@ func renderMarkdown(report *EvalReport) string {
 				fmt.Fprintf(&b, "\n")
 			}
 		}
+	}
+	if report.Comparison != nil {
+		fmt.Fprintf(&b, "\n## Baseline comparison\n\n")
+		fmt.Fprintf(&b, "| Group | Metric | Baseline | Current | Delta | Pass |\n")
+		fmt.Fprintf(&b, "| --- | --- | --- | --- | --- | --- |\n")
+		for _, item := range report.Comparison.Items {
+			pass := "PASS"
+			if !item.Pass {
+				pass = "FAIL"
+			}
+			fmt.Fprintf(&b, "| %s | %s | %.4f | %.4f | %.4f | %s |\n",
+				item.Group, item.Name, item.Baseline, item.Current, item.Delta, pass)
+		}
+		fmt.Fprintf(&b, "\nFailed metrics: %d\n", report.Comparison.FailedCount)
 	}
 	fmt.Fprintf(&b, "Generated at %s\n", report.GeneratedAt)
 	return b.String()

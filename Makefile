@@ -1,4 +1,4 @@
-.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs install-swagger build-lite run-lite package-lite anydoc-lib build-anydoc eval-baseline
+.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs install-swagger build-lite run-lite package-lite anydoc-lib build-anydoc eval-baseline eval-ci eval-baseline-generate
 
 # Show help
 help:
@@ -350,6 +350,21 @@ dev-frontend:
 
 # WP2 reproducible baseline runner
 CONFIG ?= ./evaluation/configs/default.yaml
+BASELINE ?= ./evaluation/baselines/demo.yaml
 eval-baseline:
 	$(MAKE) -C cli build
 	./cli/bin/weknora eval run --config $(CONFIG) --wait --report-dir artifacts/evaluation
+
+# WP3 quality gate: run the baseline and compare against the committed gate
+eval-ci:
+	$(MAKE) -C cli build
+	./cli/bin/weknora eval run --config $(CONFIG) --wait \
+		--report-dir artifacts/evaluation --baseline $(BASELINE)
+
+# Generate a baseline from the latest trusted run (requires APPROVED_BY/APPROVED_COMMIT)
+eval-baseline-generate:
+	./cli/bin/weknora eval baseline create \
+		--result artifacts/evaluation/evaluation-result.json \
+		--output $(BASELINE) \
+		--approved-by $(APPROVED_BY) \
+		--approved-commit $(APPROVED_COMMIT)

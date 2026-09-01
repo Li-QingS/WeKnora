@@ -13,6 +13,7 @@ import (
 	sdk "github.com/Tencent/WeKnora/client"
 
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
+	"github.com/Tencent/WeKnora/cli/internal/evalrunner"
 	"github.com/Tencent/WeKnora/cli/internal/iostreams"
 )
 
@@ -144,5 +145,80 @@ func TestRunSuccess(t *testing.T) {
 	}
 	if report.ConfigHash != "abc123" {
 		t.Errorf("config_hash=%q, want abc123", report.ConfigHash)
+	}
+}
+
+func TestRunCommandBaselineRegression(t *testing.T) {
+	_, _ = iostreams.SetForTest(t)
+	dir := t.TempDir()
+	cfgPath := writeEvalConfig(t, dir)
+
+	min := 0.8
+	abs := 0.1
+	baseline := &evalrunner.Baseline{
+		Version:    1,
+		ConfigHash: "abc123",
+		Dataset:    evalrunner.BaselineDataset{ID: "demo", SHA256: "ds123"},
+		Metrics: evalrunner.BaselineMetrics{
+			Retrieval: evalrunner.RetrievalThresholds{
+				Recall: evalrunner.MetricThreshold{Baseline: 0.9, MinValue: &min, MaxAbsoluteDrop: &abs},
+			},
+		},
+	}
+	baselinePath := filepath.Join(dir, "baseline.yaml")
+	if err := evalrunner.WriteBaseline(baselinePath, baseline, false); err != nil {
+		t.Fatalf("write baseline: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/evaluation":
+			if r.Method == http.MethodPost {
+				_, _ = w.Write([]byte(`{
+					"success": true,
+					"data": {"task":{"id":"run-1","dataset_id":"demo","status":0},"params":{}}
+				}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{
+				"success": true,
+				"data": {
+					"task":{"id":"run-1","dataset_id":"demo","status":2,"total":1,"finished":1},
+					"params":{},
+					"metric":{"retrieval_metrics":{"precision":1,"recall":0.7,"ndcg3":1,"ndcg10":1,"mrr":1,"map":1},"generation_metrics":{"bleu1":0.2,"bleu2":0.15,"bleu4":0.1,"rouge1":0.3,"rouge2":0.2,"rougel":0.28}}
+				}
+			}`))
+			return
+		case "/api/v1/evaluation/runs":
+			_, _ = w.Write([]byte(`{
+				"success": true,
+				"data": [{
+					"id":"run-1",
+					"dataset_id":"demo",
+					"status":2,
+					"config_hash":"abc123",
+					"config_snapshot":{"dataset":{"id":"demo","sha256":"ds123","sample_count":1}}
+				}],
+				"total": 1,
+				"page": 1,
+				"page_size": 10
+			}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	factory := &cmdutil.Factory{
+		Client: func() (*sdk.Client, error) {
+			return sdk.NewClient(server.URL, sdk.WithBearerToken("x")), nil
+		},
+	}
+	cmd := NewCmdRun(factory)
+	cmd.SetArgs([]string{"--config", cfgPath, "--baseline", baselinePath})
+	err := cmd.Execute()
+	var ce *cmdutil.Error
+	if !errors.As(err, &ce) || ce.Code != cmdutil.CodeEvalRegression {
+		t.Fatalf("err=%v, want eval.regression", err)
 	}
 }

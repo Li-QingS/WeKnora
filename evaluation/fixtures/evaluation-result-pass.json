@@ -1,0 +1,89 @@
+{
+  "run_id": "evaluation_fixture_pass_demo",
+  "config_hash": "2bbe7dd147d0aa013e749b01441fea05f24ceeefdee9439f23de7f2a98c02807",
+  "status": 2,
+  "status_label": "success",
+  "dataset": {
+    "id": "demo",
+    "sha256": "a6eee38de1ad5d7271c1e8fb2a93d7fd9fa145b06860b17e0fd12663631381e3",
+    "sample_count": 15
+  },
+  "models": [
+    {
+      "id": "63e83034-c2d5-4793-af06-304ef8403794",
+      "name": "qwen3.7-text-embedding",
+      "provider": "generic",
+      "type": "Embedding"
+    },
+    {
+      "id": "e91e31f4-ffd4-43a2-a44e-890e8a70b25b",
+      "name": "qwen3.8-27b",
+      "provider": "generic",
+      "type": "KnowledgeQA"
+    }
+  ],
+  "params": {
+    "chat_model_id": "e91e31f4-ffd4-43a2-a44e-890e8a70b25b",
+    "embedding_top_k": 30,
+    "enable_query_expansion": false,
+    "enable_rewrite": false,
+    "fallback_prompt": "",
+    "fallback_response": "Sorry, I am unable to answer this question.",
+    "fallback_strategy": "",
+    "keyword_threshold": 0.3,
+    "knowledge_base_ids": [],
+    "max_rounds": 5,
+    "rerank_model_id": "",
+    "rerank_threshold": 0.3,
+    "rerank_top_k": 30,
+    "rewrite_prompt_system": "",
+    "rewrite_prompt_user": "",
+    "session_id": "",
+    "summary_config": {
+      "context_template": "",
+      "frequency_penalty": 0,
+      "max_completion_tokens": 2048,
+      "max_tokens": 0,
+      "no_match_prefix": "",
+      "presence_penalty": 0,
+      "prompt": "",
+      "repeat_penalty": 1,
+      "seed": 0,
+      "temperature": 0.3,
+      "thinking": null,
+      "top_k": 0,
+      "top_p": 0
+    },
+    "user_id": "",
+    "vector_database": "",
+    "vector_threshold": 0.2
+  },
+  "metric": {
+    "generation_metrics": {
+      "bleu1": 0.21544942333155503,
+      "bleu2": 0.15433951060804432,
+      "bleu4": 0.09699495054105699,
+      "rouge1": 0.346091632301247,
+      "rouge2": 0.137904054040155,
+      "rougel": 0.29975615294164953
+    },
+    "retrieval_metrics": {
+      "map": 1,
+      "mrr": 1,
+      "ndcg10": 1,
+      "ndcg3": 1,
+      "precision": 1,
+      "recall": 1
+    }
+  },
+  "finished": 15,
+  "total": 15,
+  "version": {
+    "app_version": "0.7.2",
+    "git_commit": "a8e2b423",
+    "git_dirty": true,
+    "go_version": "go version go1.26.0 linux/amd64"
+  },
+  "reproduce": "make eval-baseline CONFIG=./evaluation/configs/default.yaml",
+  "generated_at": "2026-09-01T00:00:00Z"
+}

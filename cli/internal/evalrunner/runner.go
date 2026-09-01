@@ -16,6 +16,7 @@ import (
 var (
 	ErrServiceUnavailable = errors.New("eval service unavailable")
 	ErrRunFailed          = errors.New("eval run failed")
+	ErrRegression         = errors.New("eval metrics regressed")
 )
 
 // EvalClient is the narrow SDK surface the runner needs. *sdk.Client
@@ -35,6 +36,7 @@ type RunOptions struct {
 	ReportDir string
 	Reproduce string
 	TaskID    string
+	Baseline  string
 }
 
 // RunResult carries everything a successful (or reported-failure) invocation
@@ -45,6 +47,7 @@ type RunResult struct {
 	Run         *sdk.EvaluationRun
 	Report      *EvalReport
 	ReportPaths []string
+	Comparison  *Comparison
 }
 
 // Run resolves models, starts the evaluation, polls it, and writes reports.
@@ -122,6 +125,18 @@ func finishRun(
 		return result, fmt.Errorf("%w: build report: %v", ErrRunFailed, buildErr)
 	}
 	result.Report = report
+	if terminalDetail.Task.Status == 2 && opts.Baseline != "" {
+		baseline, loadErr := LoadBaseline(opts.Baseline)
+		if loadErr != nil {
+			return result, loadErr
+		}
+		comparison, compareErr := CompareResult(report, baseline)
+		if compareErr != nil {
+			return result, compareErr
+		}
+		report.Comparison = comparison
+		result.Comparison = comparison
+	}
 	paths, writeErr := WriteReports(opts.ReportDir, report)
 	if writeErr != nil {
 		return result, fmt.Errorf("%w: write report: %v", ErrRunFailed, writeErr)
@@ -131,6 +146,9 @@ func finishRun(
 	if terminalDetail.Task.Status != 2 {
 		return result, fmt.Errorf("%w: run %s ended with status %d: %s",
 			ErrRunFailed, terminalDetail.Task.ID, terminalDetail.Task.Status, terminalDetail.Task.ErrMsg)
+	}
+	if result.Comparison != nil && !result.Comparison.Pass {
+		return result, fmt.Errorf("%w: %d metric(s) regressed", ErrRegression, result.Comparison.FailedCount)
 	}
 	return result, nil
 }

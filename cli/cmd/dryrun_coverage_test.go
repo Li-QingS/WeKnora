@@ -29,8 +29,9 @@ var dryRunExpectation = map[string]bool{
 	"chunk delete": true, "message delete": true,
 	"session delete": true, "session stop": true, "session tool-approval resolve": true,
 	"agent create": true, "agent update": true, "agent delete": true,
-	"eval run":    true, // starts a server-side evaluation run (state change)
-	"profile add": true, "profile use": true, "profile remove": true,
+	"eval run":             true, // starts a server-side evaluation run (state change)
+	"eval baseline create": true, // writes a baseline YAML file (state change)
+	"profile add":          true, "profile use": true, "profile remove": true,
 	"skills install": true, // writes skill files to a local dir (state change)
 	"auth logout":    true, "auth refresh": true,
 	"link": true, "unlink": true,
@@ -41,8 +42,9 @@ var dryRunExpectation = map[string]bool{
 	"kb list": false, "kb view": false, "kb status": false, "kb check": false,
 	"kb config": false, // read-only inspection of a KB's model config
 	"doc list":  false, "doc view": false, "doc download": false,
-	"doc wait":   false, // polling read, no mutation
-	"chunk list": false, "chunk view": false,
+	"doc wait":     false, // polling read, no mutation
+	"eval compare": false, // read-only comparison of result vs baseline
+	"chunk list":   false, "chunk view": false,
 	"message list": false, "message search": false,
 	"session list": false, "session view": false,
 	"agent list": false, "agent view": false, "agent status": false, "agent check": false,

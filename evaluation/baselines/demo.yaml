@@ -1,0 +1,55 @@
+version: 1
+config_hash: "2bbe7dd147d0aa013e749b01441fea05f24ceeefdee9439f23de7f2a98c02807"
+dataset:
+  id: demo
+  sha256: "a6eee38de1ad5d7271c1e8fb2a93d7fd9fa145b06860b17e0fd12663631381e3"
+metrics:
+  retrieval_metrics:
+    precision:
+      baseline: 1.0
+      min_value: 0.8
+      max_absolute_drop: 0.1
+    recall:
+      baseline: 1.0
+      min_value: 0.8
+      max_absolute_drop: 0.1
+    ndcg3:
+      baseline: 1.0
+      min_value: 0.8
+      max_absolute_drop: 0.1
+    ndcg10:
+      baseline: 1.0
+      min_value: 0.8
+      max_absolute_drop: 0.1
+    mrr:
+      baseline: 1.0
+      min_value: 0.8
+      max_absolute_drop: 0.1
+    map:
+      baseline: 1.0
+      min_value: 0.8
+      max_absolute_drop: 0.1
+  generation_metrics:
+    bleu1:
+      baseline: 0.21544942333155503
+      max_relative_drop: 0.5
+    bleu2:
+      baseline: 0.15433951060804432
+      max_relative_drop: 0.5
+    bleu4:
+      baseline: 0.09699495054105699
+      max_relative_drop: 0.5
+    rouge1:
+      baseline: 0.346091632301247
+      max_relative_drop: 0.5
+    rouge2:
+      baseline: 0.137904054040155
+      max_relative_drop: 0.5
+    rougel:
+      baseline: 0.29975615294164953
+      max_relative_drop: 0.5
+metadata:
+  approved_commit: "657466d8"
+  approved_by: "lqs"
+  created_at: "2026-09-01"
+  note: "Initial demo smoke baseline; replace with a larger dataset and re-measure thresholds"

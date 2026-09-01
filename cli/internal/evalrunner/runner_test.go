@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -19,6 +21,7 @@ type fakeEvalClient struct {
 	startErr    error
 	pollErr     error
 	listErr     error
+	metricJSON  string
 }
 
 func (f *fakeEvalClient) ListModels(context.Context) ([]sdk.Model, error) {
@@ -44,7 +47,7 @@ func (f *fakeEvalClient) GetEvaluationResult(_ context.Context, id string) (*sdk
 	return &sdk.EvaluationDetail{
 		Task:   sdk.EvaluationTask{ID: id, Status: status, Total: 1, Finished: 1},
 		Params: json.RawMessage(`{}`),
-		Metric: json.RawMessage(`{}`),
+		Metric: json.RawMessage(f.metricJSON),
 	}, nil
 }
 
@@ -180,6 +183,64 @@ func TestRunWithExistingTaskID(t *testing.T) {
 	}
 }
 
+func TestRunWithBaselinePass(t *testing.T) {
+	dir := t.TempDir()
+	baselinePath := filepath.Join(dir, "baseline.yaml")
+	baseline := baselineForRunner("ds123")
+	if err := WriteBaseline(baselinePath, baseline, false); err != nil {
+		t.Fatalf("write baseline: %v", err)
+	}
+	client := &fakeEvalClient{
+		startDetail: &sdk.EvaluationDetail{Task: sdk.EvaluationTask{ID: "run-1", Status: 0}},
+		statuses:    []int{2},
+		metricJSON:  runnerMetricJSON(0.95),
+		run: &sdk.EvaluationRun{
+			ID:             "run-1",
+			ConfigHash:     "hash123",
+			ConfigSnapshot: json.RawMessage(`{"dataset":{"id":"demo","sha256":"ds123","sample_count":1}}`),
+		},
+	}
+	opts := testRunOptions(dir)
+	opts.Baseline = baselinePath
+
+	result, err := Run(context.Background(), &RunnerConfig{DatasetID: "demo"}, client, opts)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.Comparison == nil || !result.Comparison.Pass {
+		t.Errorf("comparison=%+v, want pass", result.Comparison)
+	}
+}
+
+func TestRunWithBaselineRegression(t *testing.T) {
+	dir := t.TempDir()
+	baselinePath := filepath.Join(dir, "baseline.yaml")
+	baseline := baselineForRunner("ds123")
+	if err := WriteBaseline(baselinePath, baseline, false); err != nil {
+		t.Fatalf("write baseline: %v", err)
+	}
+	client := &fakeEvalClient{
+		startDetail: &sdk.EvaluationDetail{Task: sdk.EvaluationTask{ID: "run-1", Status: 0}},
+		statuses:    []int{2},
+		metricJSON:  runnerMetricJSON(0.7),
+		run: &sdk.EvaluationRun{
+			ID:             "run-1",
+			ConfigHash:     "hash123",
+			ConfigSnapshot: json.RawMessage(`{"dataset":{"id":"demo","sha256":"ds123","sample_count":1}}`),
+		},
+	}
+	opts := testRunOptions(dir)
+	opts.Baseline = baselinePath
+
+	result, err := Run(context.Background(), &RunnerConfig{DatasetID: "demo"}, client, opts)
+	if !errors.Is(err, ErrRegression) {
+		t.Fatalf("err=%v, want ErrRegression", err)
+	}
+	if result == nil || result.Comparison == nil || result.Comparison.Pass {
+		t.Errorf("result=%+v, want failing comparison", result)
+	}
+}
+
 func TestRunModelResolutionError(t *testing.T) {
 	client := &fakeEvalClient{models: []sdk.Model{}}
 	cfg := &RunnerConfig{DatasetID: "demo", Models: RunnerModels{Chat: "missing-chat"}}
@@ -218,5 +279,41 @@ func TestRunHistoryRecordMissing(t *testing.T) {
 	_, err := Run(context.Background(), &RunnerConfig{DatasetID: "demo"}, client, testRunOptions(t.TempDir()))
 	if !errors.Is(err, ErrRunFailed) {
 		t.Fatalf("err=%v, want ErrRunFailed", err)
+	}
+}
+
+func runnerMetricJSON(recall float64) string {
+	return fmt.Sprintf(`{
+		"retrieval_metrics": {
+			"precision": 1,
+			"recall": %f,
+			"ndcg3": 1,
+			"ndcg10": 1,
+			"mrr": 1,
+			"map": 1
+		},
+		"generation_metrics": {
+			"bleu1": 0.2,
+			"bleu2": 0.15,
+			"bleu4": 0.1,
+			"rouge1": 0.3,
+			"rouge2": 0.2,
+			"rougel": 0.28
+		}
+	}`, recall)
+}
+
+func baselineForRunner(dsHash string) *Baseline {
+	min := 0.8
+	abs := 0.1
+	return &Baseline{
+		Version:    1,
+		ConfigHash: "hash123",
+		Dataset:    BaselineDataset{ID: "demo", SHA256: dsHash},
+		Metrics: BaselineMetrics{
+			Retrieval: RetrievalThresholds{
+				Recall: MetricThreshold{Baseline: 0.9, MinValue: &min, MaxAbsoluteDrop: &abs},
+			},
+		},
 	}
 }

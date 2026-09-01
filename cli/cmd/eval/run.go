@@ -17,6 +17,7 @@ import (
 type RunOptions struct {
 	Config    string
 	TaskID    string
+	Baseline  string
 	Wait      bool
 	NoWait    bool
 	Timeout   time.Duration
@@ -77,7 +78,13 @@ Exit codes (WP2 runner contract):
 					return mapEvalError(err)
 				}
 			}
-			runOpts := buildRunOptions(c, opts, cfg, strings.TrimSpace(opts.TaskID))
+			runOpts := buildRunOptions(
+				c,
+				opts,
+				cfg,
+				strings.TrimSpace(opts.TaskID),
+				strings.TrimSpace(opts.Baseline),
+			)
 			cli, err := f.Client()
 			if err != nil {
 				return cmdutil.NewError(cmdutil.CodeEvalServiceUnavailable, err.Error())
@@ -110,6 +117,7 @@ Exit codes (WP2 runner contract):
 	}
 	cmd.Flags().StringVar(&opts.Config, "config", "", "Path to the evaluation YAML config")
 	cmd.Flags().StringVar(&opts.TaskID, "task-id", "", "Poll and report an existing evaluation task id")
+	cmd.Flags().StringVar(&opts.Baseline, "baseline", "", "Baseline YAML to compare the result against")
 	cmd.Flags().BoolVar(&opts.Wait, "wait", true, "Wait for the run to reach a terminal state")
 	cmd.Flags().BoolVar(&opts.NoWait, "no-wait", false, "Start the run and print its task id without waiting")
 	cmd.Flags().DurationVar(&opts.Timeout, "timeout", 30*time.Minute, "Max wait time")
@@ -139,6 +147,7 @@ func buildRunOptions(
 	opts *RunOptions,
 	cfg *evalrunner.RunnerConfig,
 	taskID string,
+	baseline string,
 ) evalrunner.RunOptions {
 	wait := opts.Wait && !opts.NoWait
 	if cfg != nil && !c.Flags().Changed("wait") && !c.Flags().Changed("no-wait") {
@@ -171,11 +180,16 @@ func buildRunOptions(
 		ReportDir: reportDir,
 		Reproduce: reproduce,
 		TaskID:    taskID,
+		Baseline:  baseline,
 	}
 }
 
 func mapEvalError(err error) error {
 	switch {
+	case errors.Is(err, evalrunner.ErrRegression):
+		return cmdutil.NewError(cmdutil.CodeEvalRegression, err.Error())
+	case errors.Is(err, evalrunner.ErrBaselineMismatch):
+		return cmdutil.NewError(cmdutil.CodeEvalConfigError, err.Error())
 	case errors.Is(err, evalrunner.ErrInvalidConfig):
 		return cmdutil.NewError(cmdutil.CodeEvalConfigError, err.Error())
 	case errors.Is(err, evalrunner.ErrServiceUnavailable):

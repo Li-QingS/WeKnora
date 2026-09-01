@@ -18,5 +18,7 @@ config, starts the evaluation through the server API, polls until it is
 terminal, and writes evaluation-result.json and evaluation-report.md.`,
 	}
 	cmd.AddCommand(NewCmdRun(f))
+	cmd.AddCommand(NewCmdCompare())
+	cmd.AddCommand(NewCmdBaseline())
 	return cmd
 }

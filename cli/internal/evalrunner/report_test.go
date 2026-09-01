@@ -93,3 +93,49 @@ func TestWriteReports(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteReportsWithComparison(t *testing.T) {
+	dir := t.TempDir()
+	report := &EvalReport{
+		RunID:       "run-1",
+		ConfigHash:  "abc123",
+		Status:      2,
+		StatusLabel: "success",
+		Dataset:     DatasetReport{ID: "demo", SHA256: "hash123", SampleCount: 1},
+		Models:      []ModelReport{},
+		Params:      map[string]any{},
+		Metric:      map[string]any{},
+		Reproduce:   "make eval-ci",
+		GeneratedAt: "2026-09-01T00:00:00Z",
+		Comparison: &Comparison{
+			Pass: false,
+			Items: []ComparisonItem{
+				{
+					Group:    "retrieval_metrics",
+					Name:     "recall",
+					Baseline: 0.9,
+					Current:  0.7,
+					Delta:    0.2,
+					Pass:     false,
+					Reason:   "below min_value",
+				},
+			},
+			FailedCount: 1,
+		},
+	}
+
+	paths, err := WriteReports(dir, report)
+	if err != nil {
+		t.Fatalf("WriteReports: %v", err)
+	}
+	md, err := os.ReadFile(paths[1])
+	if err != nil {
+		t.Fatalf("read md: %v", err)
+	}
+	content := string(md)
+	for _, want := range []string{"Baseline comparison", "recall", "FAIL", "Failed metrics: 1"} {
+		if !strings.Contains(content, want) {
+			t.Errorf("markdown missing %q:\n%s", want, content)
+		}
+	}
+}
