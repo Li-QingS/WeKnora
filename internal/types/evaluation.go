@@ -172,3 +172,49 @@ const (
 	StateAfterComplete                      // After completion
 	StateEnd                                // Evaluation ended
 )
+
+// EvaluationOptions carries all inputs accepted by the evaluation API.
+type EvaluationOptions struct {
+	DatasetID        string                    `json:"dataset_id"`
+	KnowledgeBaseID  string                    `json:"knowledge_base_id"`
+	ChatModelID      string                    `json:"chat_id"`
+	RerankModelID    string                    `json:"rerank_id"`
+	EmbeddingModelID string                    `json:"embedding_id"`
+	Params           *EvaluationParamsOverride `json:"params,omitempty"`
+}
+
+// EvaluationParamsOverride holds optional evaluation parameters. Pointer
+// fields distinguish "not provided" from explicit zero values.
+type EvaluationParamsOverride struct {
+	VectorThreshold  *float64               `json:"vector_threshold,omitempty"`
+	KeywordThreshold *float64               `json:"keyword_threshold,omitempty"`
+	EmbeddingTopK    *int                   `json:"embedding_top_k,omitempty"`
+	MaxRounds        *int                   `json:"max_rounds,omitempty"`
+	RerankTopK       *int                   `json:"rerank_top_k,omitempty"`
+	RerankThreshold  *float64               `json:"rerank_threshold,omitempty"`
+	EnableRewrite    *bool                  `json:"enable_rewrite,omitempty"`
+	SummaryConfig    *SummaryConfigOverride `json:"summary_config,omitempty"`
+}
+
+// SummaryConfigOverride contains the generation parameters a runner may
+// override. Prompt text is intentionally not overridable through the API.
+type SummaryConfigOverride struct {
+	MaxTokens           *int     `json:"max_tokens,omitempty"`
+	Temperature         *float64 `json:"temperature,omitempty"`
+	TopK                *int     `json:"top_k,omitempty"`
+	TopP                *float64 `json:"top_p,omitempty"`
+	RepeatPenalty       *float64 `json:"repeat_penalty,omitempty"`
+	FrequencyPenalty    *float64 `json:"frequency_penalty,omitempty"`
+	PresencePenalty     *float64 `json:"presence_penalty,omitempty"`
+	Seed                *int     `json:"seed,omitempty"`
+	MaxCompletionTokens *int     `json:"max_completion_tokens,omitempty"`
+}
+
+// EvaluationDataset is a loaded, validated dataset with a deterministic
+// content fingerprint.
+type EvaluationDataset struct {
+	ID          string
+	SHA256      string
+	SampleCount int
+	Pairs       []*QAPair
+}

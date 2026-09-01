@@ -26,10 +26,12 @@ func NewEvaluationHandler(evaluationService interfaces.EvaluationService) *Evalu
 
 // EvaluationRequest contains parameters for evaluation request
 type EvaluationRequest struct {
-	DatasetID       string `json:"dataset_id"`        // ID of dataset to evaluate
-	KnowledgeBaseID string `json:"knowledge_base_id"` // ID of knowledge base to use
-	ChatModelID     string `json:"chat_id"`           // ID of chat model to use
-	RerankModelID   string `json:"rerank_id"`         // ID of rerank model to use
+	DatasetID        string                          `json:"dataset_id"`        // ID of dataset to evaluate
+	KnowledgeBaseID  string                          `json:"knowledge_base_id"` // ID of knowledge base to use
+	ChatModelID      string                          `json:"chat_id"`           // ID of chat model to use
+	RerankModelID    string                          `json:"rerank_id"`         // ID of rerank model to use
+	EmbeddingModelID string                          `json:"embedding_id"`      // ID of embedding model to use
+	Params           *types.EvaluationParamsOverride `json:"params,omitempty"`  // Optional parameter overrides
 }
 
 // Evaluation godoc
@@ -71,14 +73,23 @@ func (e *EvaluationHandler) Evaluation(c *gin.Context) {
 		secutils.SanitizeForLog(request.RerankModelID),
 	)
 
-	task, err := e.evaluationService.Evaluation(ctx,
-		secutils.SanitizeForLog(request.DatasetID),
-		secutils.SanitizeForLog(request.KnowledgeBaseID),
-		secutils.SanitizeForLog(request.ChatModelID),
-		secutils.SanitizeForLog(request.RerankModelID),
-	)
+	opts := &types.EvaluationOptions{
+		DatasetID:        secutils.SanitizeForLog(request.DatasetID),
+		KnowledgeBaseID:  secutils.SanitizeForLog(request.KnowledgeBaseID),
+		ChatModelID:      secutils.SanitizeForLog(request.ChatModelID),
+		RerankModelID:    secutils.SanitizeForLog(request.RerankModelID),
+		EmbeddingModelID: secutils.SanitizeForLog(request.EmbeddingModelID),
+		Params:           request.Params,
+	}
+	task, err := e.evaluationService.Evaluation(ctx, opts)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
+		if stderrors.Is(err, service.ErrDatasetNotFound) ||
+			stderrors.Is(err, service.ErrInvalidDataset) ||
+			stderrors.Is(err, service.ErrInvalidEvaluationParams) {
+			c.Error(errors.NewBadRequestError(err.Error()))
+			return
+		}
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}

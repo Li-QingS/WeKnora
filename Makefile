@@ -1,4 +1,4 @@
-.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs install-swagger build-lite run-lite package-lite anydoc-lib build-anydoc
+.PHONY: help build run test clean docker-build-app docker-build-docreader docker-build-frontend docker-build-all docker-run migrate-up migrate-down docker-restart docker-stop start-all stop-all start-ollama stop-ollama build-images build-images-app build-images-docreader build-images-frontend clean-images check-env list-containers pull-images show-platform dev-start dev-stop dev-restart dev-logs dev-status dev-app dev-frontend docs install-swagger build-lite run-lite package-lite anydoc-lib build-anydoc eval-baseline
 
 # Show help
 help:
@@ -348,3 +348,8 @@ dev-app:
 dev-frontend:
 	./scripts/dev.sh frontend
 
+# WP2 reproducible baseline runner
+CONFIG ?= ./evaluation/configs/default.yaml
+eval-baseline:
+	$(MAKE) -C cli build
+	./cli/bin/weknora eval run --config $(CONFIG) --wait --report-dir artifacts/evaluation

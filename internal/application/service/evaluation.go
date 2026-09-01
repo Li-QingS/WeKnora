@@ -39,6 +39,9 @@ const (
 // ErrEvaluationTaskNotFound is returned when no run exists for the caller's tenant.
 var ErrEvaluationTaskNotFound = errors.New("evaluation task not found")
 
+// ErrInvalidEvaluationParams is returned when request parameter overrides are invalid.
+var ErrInvalidEvaluationParams = errors.New("invalid evaluation params")
+
 // EvaluationService handles evaluation tasks for knowledge base and chat models
 type EvaluationService struct {
 	config               *config.Config                  // Application configuration
@@ -121,49 +124,64 @@ func (e *EvaluationService) evaluationRunToDetail(run *types.EvaluationRun) (*ty
 	}, nil
 }
 
-// Evaluation starts a new evaluation task with given parameters
-// datasetID: ID of the dataset to evaluate against
-// knowledgeBaseID: ID of the knowledge base to use (empty to create new)
-// chatModelID: ID of the chat model to evaluate
-// rerankModelID: ID of the rerank model to evaluate
-func (e *EvaluationService) Evaluation(ctx context.Context,
-	datasetID string, knowledgeBaseID string, chatModelID string, rerankModelID string,
-) (*types.EvaluationDetail, error) {
+// Evaluation starts a new evaluation task with the given options.
+func (e *EvaluationService) Evaluation(ctx context.Context, opts *types.EvaluationOptions) (*types.EvaluationDetail, error) {
 	logger.Info(ctx, "Start evaluation")
-	logger.Infof(ctx, "Dataset ID: %s, Knowledge Base ID: %s, Chat Model ID: %s, Rerank Model ID: %s",
-		datasetID, knowledgeBaseID, chatModelID, rerankModelID)
+	if opts == nil {
+		return nil, ErrInvalidEvaluationParams
+	}
+	datasetID := opts.DatasetID
+	knowledgeBaseID := opts.KnowledgeBaseID
+	chatModelID := opts.ChatModelID
+	rerankModelID := opts.RerankModelID
+	embeddingModelID := opts.EmbeddingModelID
+	logger.Infof(ctx, "Dataset ID: %s, Knowledge Base ID: %s, Chat Model ID: %s, Rerank Model ID: %s, Embedding Model ID: %s",
+		datasetID, knowledgeBaseID, chatModelID, rerankModelID, embeddingModelID)
 
 	// Get tenant ID from context for multi-tenancy support
 	tenantID := types.MustTenantIDFromContext(ctx)
 	logger.Infof(ctx, "Tenant ID: %d", tenantID)
 
-	var embeddingModelID string
+	// Load and validate the dataset before creating the knowledge base or
+	// persisting a run, so configuration errors fail fast with HTTP 400.
+	if datasetID == "" {
+		datasetID = "default"
+		logger.Info(ctx, "Using default dataset")
+	}
+	loadedDataset, err := e.dataset.GetDatasetByID(ctx, datasetID)
+	if err != nil {
+		logger.Errorf(ctx, "Failed to load dataset: %v", err)
+		return nil, err
+	}
+
 	// Handle knowledge base creation if not provided
 	if knowledgeBaseID == "" {
 		logger.Info(ctx, "No knowledge base ID provided, creating new knowledge base")
-		// Create new knowledge base with default evaluation settings
-		// 获取默认的嵌入模型和LLM模型
-		models, err := e.modelService.ListModels(ctx)
-		if err != nil {
-			logger.Errorf(ctx, "Failed to list models: %v", err)
-			return nil, err
-		}
-
 		var llmModelID string
-		for _, model := range models {
-			if model == nil {
-				continue
+		if embeddingModelID == "" {
+			// 获取默认的嵌入模型和LLM模型
+			models, listErr := e.modelService.ListModels(ctx)
+			if listErr != nil {
+				logger.Errorf(ctx, "Failed to list models: %v", listErr)
+				return nil, listErr
 			}
-			if model.Type == types.ModelTypeEmbedding {
-				embeddingModelID = model.ID
+			for _, model := range models {
+				if model == nil {
+					continue
+				}
+				if model.Type == types.ModelTypeEmbedding {
+					embeddingModelID = model.ID
+				}
+				if model.Type == types.ModelTypeKnowledgeQA {
+					llmModelID = model.ID
+				}
 			}
-			if model.Type == types.ModelTypeKnowledgeQA {
-				llmModelID = model.ID
-			}
-		}
 
-		if embeddingModelID == "" || llmModelID == "" {
-			return nil, fmt.Errorf("no default models found for evaluation")
+			if embeddingModelID == "" || llmModelID == "" {
+				return nil, fmt.Errorf("no default models found for evaluation")
+			}
+		} else if err := validateEvaluationEmbeddingModel(ctx, e.modelService, embeddingModelID); err != nil {
+			return nil, err
 		}
 
 		kb, err := e.knowledgeBaseService.CreateKnowledgeBase(ctx, &types.KnowledgeBase{
@@ -188,25 +206,24 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 			return nil, err
 		}
 
+		if embeddingModelID == "" {
+			embeddingModelID = kb.EmbeddingModelID
+		} else if err := validateEvaluationEmbeddingModel(ctx, e.modelService, embeddingModelID); err != nil {
+			return nil, err
+		}
+
 		kb, err = e.knowledgeBaseService.CreateKnowledgeBase(ctx, &types.KnowledgeBase{
 			Name:             "evaluation",
 			Description:      "evaluation",
-			EmbeddingModelID: kb.EmbeddingModelID,
+			EmbeddingModelID: embeddingModelID,
 			SummaryModelID:   kb.SummaryModelID,
 		})
 		if err != nil {
 			logger.Errorf(ctx, "Failed to create knowledge base: %v", err)
 			return nil, err
 		}
-		embeddingModelID = kb.EmbeddingModelID
 		knowledgeBaseID = kb.ID
 		logger.Infof(ctx, "Created new knowledge base with ID: %s based on existing one", knowledgeBaseID)
-	}
-
-	// Set default values for optional parameters
-	if datasetID == "" {
-		datasetID = "default"
-		logger.Info(ctx, "Using default dataset")
 	}
 
 	if rerankModelID == "" {
@@ -285,6 +302,10 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 			RewritePromptUser:   e.config.Conversation.RewritePromptUser,
 		},
 	}
+	if err := applyEvaluationParams(params, opts.Params); err != nil {
+		logger.Errorf(ctx, "Failed to apply evaluation params: %v", err)
+		return nil, err
+	}
 	detail := &types.EvaluationDetail{
 		Task: &types.EvaluationTask{
 			ID:        taskID,
@@ -301,8 +322,12 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 		return nil, fmt.Errorf("evaluation: encode params: %w", err)
 	}
 	snapshot := types.EvaluationConfigSnapshot{
-		Dataset: types.DatasetSnapshot{ID: datasetID},
-		Models:  e.buildModelSnapshots(ctx, embeddingModelID, chatModelID, rerankModelID),
+		Dataset: types.DatasetSnapshot{
+			ID:          datasetID,
+			SHA256:      loadedDataset.SHA256,
+			SampleCount: loadedDataset.SampleCount,
+		},
+		Models: e.buildModelSnapshots(ctx, embeddingModelID, chatModelID, rerankModelID),
 		Version: types.VersionSignature{
 			AppVersion: buildinfo.Version,
 			GitCommit:  buildinfo.CommitID,
@@ -367,7 +392,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 		go e.runHeartbeat(heartbeatCtx, taskID)
 
 		// Execute actual evaluation
-		if err := e.EvalDataset(newCtx, detail, knowledgeBaseID); err != nil {
+		if err := e.EvalDataset(newCtx, detail, knowledgeBaseID, loadedDataset); err != nil {
 			stopHeartbeat()
 			detail.Task.Status = types.EvaluationStatueFailed
 			detail.Task.ErrMsg = err.Error()
@@ -446,34 +471,32 @@ func (e *EvaluationService) Evaluation(ctx context.Context,
 	return detail, nil
 }
 
-// EvalDataset performs the actual evaluation of a dataset
-// Processes each QA pair in parallel and records metrics
-func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.EvaluationDetail, knowledgeBaseID string) error {
+// EvalDataset performs the actual evaluation of a loaded dataset.
+func (e *EvaluationService) EvalDataset(
+	ctx context.Context,
+	detail *types.EvaluationDetail,
+	knowledgeBaseID string,
+	dataset *types.EvaluationDataset,
+) error {
 	logger.Info(ctx, "Start evaluating dataset")
 	logger.Infof(ctx, "Task ID: %s, Dataset ID: %s", detail.Task.ID, detail.Task.DatasetID)
 
-	// Retrieve dataset from storage
-	dataset, err := e.dataset.GetDatasetByID(ctx, detail.Task.DatasetID)
-	if err != nil {
-		logger.Errorf(ctx, "Failed to get dataset: %v", err)
-		return err
-	}
-	logger.Infof(ctx, "Dataset retrieved successfully with %d QA pairs", len(dataset))
+	logger.Infof(ctx, "Dataset retrieved successfully with %d QA pairs", len(dataset.Pairs))
 
-	detail.Task.Total = len(dataset)
+	detail.Task.Total = len(dataset.Pairs)
 	if err := e.evaluationRunRepository.SetDatasetHash(
 		ctx,
 		detail.Task.ID,
-		computeDatasetHash(dataset),
-		len(dataset),
+		dataset.SHA256,
+		len(dataset.Pairs),
 	); err != nil {
 		logger.Errorf(ctx, "Failed to persist dataset hash: %v", err)
 		return err
 	}
-	logger.Infof(ctx, "Updated task total to %d QA pairs", len(dataset))
+	logger.Infof(ctx, "Updated task total to %d QA pairs", len(dataset.Pairs))
 
 	// Extract and organize passages from dataset
-	passages := getPassageList(dataset)
+	passages := getPassageList(dataset.Pairs)
 	logger.Infof(ctx, "Creating knowledge from %d passages", len(passages))
 
 	// Create knowledge base from passages (sync: wait for indexing to complete before querying)
@@ -505,14 +528,14 @@ func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.Evalu
 	var finished int
 	var mu sync.Mutex
 	var g errgroup.Group
-	metricHook := NewHookMetric(len(dataset))
+	metricHook := NewHookMetric(len(dataset.Pairs))
 
 	// Set worker limit based on available CPUs
 	g.SetLimit(max(runtime.GOMAXPROCS(0)-1, 1))
 	logger.Infof(ctx, "Starting evaluation with %d parallel workers", max(runtime.GOMAXPROCS(0)-1, 1))
 
 	// Process each QA pair in parallel
-	for i, qaPair := range dataset {
+	for i, qaPair := range dataset.Pairs {
 		qaPair := qaPair
 		i := i
 		g.Go(func() error {
@@ -564,13 +587,13 @@ func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.Evalu
 				ctx,
 				detail.Task.ID,
 				finished,
-				len(dataset),
+				len(dataset.Pairs),
 				metricJSON,
 			); err != nil {
 				logger.Errorf(ctx, "Failed to persist evaluation progress: %v", err)
 				return err
 			}
-			logger.Infof(ctx, "Updated task progress: %d/%d completed", finished, len(dataset))
+			logger.Infof(ctx, "Updated task progress: %d/%d completed", finished, len(dataset.Pairs))
 			return nil
 		})
 	}
@@ -593,7 +616,7 @@ func (e *EvaluationService) EvalDataset(ctx context.Context, detail *types.Evalu
 		ctx,
 		detail.Task.ID,
 		finished,
-		len(dataset),
+		len(dataset.Pairs),
 		metricJSON,
 	); err != nil {
 		logger.Errorf(ctx, "Failed to persist final evaluation progress: %v", err)
@@ -697,16 +720,116 @@ func (e *EvaluationService) computeConfigHash(
 	return hex.EncodeToString(sum[:]), nil
 }
 
-func computeDatasetHash(dataset []*types.QAPair) string {
-	if dataset == nil {
-		dataset = []*types.QAPair{}
-	}
-	encoded, err := json.Marshal(dataset)
+func validateEvaluationEmbeddingModel(ctx context.Context, modelService interfaces.ModelService, id string) error {
+	model, err := modelService.GetModelByID(ctx, id)
 	if err != nil {
-		return ""
+		return fmt.Errorf("resolve embedding model %q: %w", id, err)
 	}
-	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:])
+	if model == nil || model.Type != types.ModelTypeEmbedding {
+		return fmt.Errorf("model %q is not an embedding model", id)
+	}
+	return nil
+}
+
+func applyEvaluationParams(params *types.ChatManage, overrides *types.EvaluationParamsOverride) error {
+	if overrides == nil {
+		return nil
+	}
+	if overrides.VectorThreshold != nil {
+		if *overrides.VectorThreshold < 0 || *overrides.VectorThreshold > 1 {
+			return fmt.Errorf("%w: vector_threshold must be in [0,1]", ErrInvalidEvaluationParams)
+		}
+		params.VectorThreshold = *overrides.VectorThreshold
+	}
+	if overrides.KeywordThreshold != nil {
+		if *overrides.KeywordThreshold < 0 || *overrides.KeywordThreshold > 1 {
+			return fmt.Errorf("%w: keyword_threshold must be in [0,1]", ErrInvalidEvaluationParams)
+		}
+		params.KeywordThreshold = *overrides.KeywordThreshold
+	}
+	if overrides.EmbeddingTopK != nil {
+		if *overrides.EmbeddingTopK <= 0 {
+			return fmt.Errorf("%w: embedding_top_k must be positive", ErrInvalidEvaluationParams)
+		}
+		params.EmbeddingTopK = *overrides.EmbeddingTopK
+	}
+	if overrides.MaxRounds != nil {
+		if *overrides.MaxRounds < 0 {
+			return fmt.Errorf("%w: max_rounds must be non-negative", ErrInvalidEvaluationParams)
+		}
+		params.MaxRounds = *overrides.MaxRounds
+	}
+	if overrides.RerankTopK != nil {
+		if *overrides.RerankTopK <= 0 {
+			return fmt.Errorf("%w: rerank_top_k must be positive", ErrInvalidEvaluationParams)
+		}
+		params.RerankTopK = *overrides.RerankTopK
+	}
+	if overrides.RerankThreshold != nil {
+		if *overrides.RerankThreshold < 0 || *overrides.RerankThreshold > 1 {
+			return fmt.Errorf("%w: rerank_threshold must be in [0,1]", ErrInvalidEvaluationParams)
+		}
+		params.RerankThreshold = *overrides.RerankThreshold
+	}
+	if overrides.EnableRewrite != nil {
+		params.EnableRewrite = *overrides.EnableRewrite
+	}
+	if overrides.SummaryConfig == nil {
+		return nil
+	}
+	sc := &params.SummaryConfig
+	if overrides.SummaryConfig.MaxTokens != nil {
+		if *overrides.SummaryConfig.MaxTokens < 0 {
+			return fmt.Errorf("%w: summary max_tokens must be non-negative", ErrInvalidEvaluationParams)
+		}
+		sc.MaxTokens = *overrides.SummaryConfig.MaxTokens
+	}
+	if overrides.SummaryConfig.Temperature != nil {
+		if *overrides.SummaryConfig.Temperature < 0 || *overrides.SummaryConfig.Temperature > 2 {
+			return fmt.Errorf("%w: temperature must be in [0,2]", ErrInvalidEvaluationParams)
+		}
+		sc.Temperature = *overrides.SummaryConfig.Temperature
+	}
+	if overrides.SummaryConfig.TopK != nil {
+		if *overrides.SummaryConfig.TopK < 0 {
+			return fmt.Errorf("%w: summary top_k must be non-negative", ErrInvalidEvaluationParams)
+		}
+		sc.TopK = *overrides.SummaryConfig.TopK
+	}
+	if overrides.SummaryConfig.TopP != nil {
+		if *overrides.SummaryConfig.TopP < 0 || *overrides.SummaryConfig.TopP > 1 {
+			return fmt.Errorf("%w: top_p must be in [0,1]", ErrInvalidEvaluationParams)
+		}
+		sc.TopP = *overrides.SummaryConfig.TopP
+	}
+	if overrides.SummaryConfig.RepeatPenalty != nil {
+		if *overrides.SummaryConfig.RepeatPenalty < 0 {
+			return fmt.Errorf("%w: repeat_penalty must be non-negative", ErrInvalidEvaluationParams)
+		}
+		sc.RepeatPenalty = *overrides.SummaryConfig.RepeatPenalty
+	}
+	if overrides.SummaryConfig.FrequencyPenalty != nil {
+		if *overrides.SummaryConfig.FrequencyPenalty < -2 || *overrides.SummaryConfig.FrequencyPenalty > 2 {
+			return fmt.Errorf("%w: frequency_penalty must be in [-2,2]", ErrInvalidEvaluationParams)
+		}
+		sc.FrequencyPenalty = *overrides.SummaryConfig.FrequencyPenalty
+	}
+	if overrides.SummaryConfig.PresencePenalty != nil {
+		if *overrides.SummaryConfig.PresencePenalty < -2 || *overrides.SummaryConfig.PresencePenalty > 2 {
+			return fmt.Errorf("%w: presence_penalty must be in [-2,2]", ErrInvalidEvaluationParams)
+		}
+		sc.PresencePenalty = *overrides.SummaryConfig.PresencePenalty
+	}
+	if overrides.SummaryConfig.Seed != nil {
+		sc.Seed = *overrides.SummaryConfig.Seed
+	}
+	if overrides.SummaryConfig.MaxCompletionTokens != nil {
+		if *overrides.SummaryConfig.MaxCompletionTokens <= 0 {
+			return fmt.Errorf("%w: max_completion_tokens must be positive", ErrInvalidEvaluationParams)
+		}
+		sc.MaxCompletionTokens = *overrides.SummaryConfig.MaxCompletionTokens
+	}
+	return nil
 }
 
 func sanitizeEvaluationParams(params *types.ChatManage) *types.ChatManage {

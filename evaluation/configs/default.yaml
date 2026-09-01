@@ -1,0 +1,28 @@
+dataset_id: demo
+
+models:
+  chat: ""
+  embedding: ""
+  rerank: ""
+
+retrieval:
+  vector_threshold: 0.2
+  keyword_threshold: 0.3
+  embedding_top_k: 30
+  rerank_top_k: 30
+  rerank_threshold: 0.3
+
+generation:
+  max_tokens: 0
+  repeat_penalty: 1.0
+  top_k: 0
+  top_p: 0.0
+  temperature: 0.3
+  seed: 0
+  max_completion_tokens: 2048
+
+execution:
+  wait: true
+  timeout: 30m
+  interval: 2s
+  report_dir: artifacts/evaluation

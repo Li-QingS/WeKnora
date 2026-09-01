@@ -62,6 +62,21 @@ func ExitCode(err error) int {
 	if errors.Is(err, SilentError) {
 		return 1
 	}
+	// eval.* codes are the WP2 runner contract consumed by CI. They take
+	// precedence over the generic buckets so `weknora eval run` can return
+	// 2/3/4/5 regardless of the underlying auth/input/server classification.
+	if matchCode(err, CodeEvalRegression) {
+		return 2
+	}
+	if matchCode(err, CodeEvalConfigError) {
+		return 3
+	}
+	if matchCode(err, CodeEvalServiceUnavailable) {
+		return 4
+	}
+	if matchCode(err, CodeEvalRunFailed) {
+		return 5
+	}
 	if matchCode(err, CodeInputConfirmationRequired) {
 		return 10
 	}

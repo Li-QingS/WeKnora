@@ -2,14 +2,33 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
 
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/parquet-go/parquet-go"
 )
+
+// Dataset errors returned by DatasetService.
+var (
+	ErrDatasetNotFound = errors.New("dataset not found")
+	ErrInvalidDataset  = errors.New("invalid dataset")
+)
+
+var datasetIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// datasetRoot is the directory that contains dataset directories. Kept as a
+// variable so tests can point it at the repository root.
+var datasetRoot = "./dataset"
 
 // DatasetService provides operations for working with datasets
 type DatasetService struct{}
@@ -37,43 +56,94 @@ type QaInfo struct {
 	AID int64 `parquet:"aid"` // Answer ID
 }
 
-// GetDatasetByID retrieves QA pairs from dataset by ID
-func (d *DatasetService) GetDatasetByID(ctx context.Context, datasetID string) ([]*types.QAPair, error) {
+// GetDatasetByID loads, validates and hashes the named dataset.
+func (d *DatasetService) GetDatasetByID(ctx context.Context, datasetID string) (*types.EvaluationDataset, error) {
 	logger.Info(ctx, "Start getting dataset by ID")
 	logger.Infof(ctx, "Getting dataset with ID: %s", datasetID)
 
-	dataset := DefaultDataset()
-	dataset.PrintStats(ctx)
-	qaPairs := dataset.Iterate()
+	if datasetID == "" {
+		datasetID = "default"
+	}
+	if !validDatasetID(datasetID) {
+		return nil, fmt.Errorf("%w: unsafe dataset id %q", ErrInvalidDataset, datasetID)
+	}
 
-	logger.Infof(ctx, "Retrieved %d QA pairs from dataset", len(qaPairs))
-	return qaPairs, nil
+	dir := datasetDir(datasetID)
+	if _, err := os.Stat(dir); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("%w: %s", ErrDatasetNotFound, datasetID)
+		}
+		return nil, fmt.Errorf("dataset: stat %s: %w", dir, err)
+	}
+
+	loaded, err := loadDatasetDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	loaded.ID = datasetID
+	logger.Infof(ctx, "Retrieved %d QA pairs from dataset", len(loaded.Pairs))
+	return loaded, nil
 }
 
-// DefaultDataset loads and initializes the default dataset from parquet files
-func DefaultDataset() dataset {
-	datasetDir := "./dataset/samples"
-	queries, err := loadParquet[TextInfo](fmt.Sprintf("%s/queries.parquet", datasetDir))
-	if err != nil {
-		panic(err)
+func validDatasetID(id string) bool {
+	if id == "" {
+		return true
 	}
-	corpus, err := loadParquet[TextInfo](fmt.Sprintf("%s/corpus.parquet", datasetDir))
-	if err != nil {
-		panic(err)
+	return datasetIDPattern.MatchString(id)
+}
+
+func datasetDir(id string) string {
+	if id == "" || id == "default" {
+		return filepath.Join(datasetRoot, "samples")
 	}
-	answers, err := loadParquet[TextInfo](fmt.Sprintf("%s/answers.parquet", datasetDir))
+	return filepath.Join(datasetRoot, id)
+}
+
+func loadDatasetDir(dir string) (*types.EvaluationDataset, error) {
+	queries, err := loadParquet[TextInfo](filepath.Join(dir, "queries.parquet"))
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("%w: load queries.parquet: %v", ErrInvalidDataset, err)
 	}
-	qrels, err := loadParquet[RelsInfo](fmt.Sprintf("%s/qrels.parquet", datasetDir))
+	corpus, err := loadParquet[TextInfo](filepath.Join(dir, "corpus.parquet"))
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("%w: load corpus.parquet: %v", ErrInvalidDataset, err)
 	}
-	qas, err := loadParquet[QaInfo](fmt.Sprintf("%s/qas.parquet", datasetDir))
+	answers, err := loadParquet[TextInfo](filepath.Join(dir, "answers.parquet"))
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("%w: load answers.parquet: %v", ErrInvalidDataset, err)
+	}
+	qrels, err := loadParquet[RelsInfo](filepath.Join(dir, "qrels.parquet"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: load qrels.parquet: %v", ErrInvalidDataset, err)
+	}
+	qas, err := loadParquet[QaInfo](filepath.Join(dir, "qas.parquet"))
+	if err != nil {
+		return nil, fmt.Errorf("%w: load qas.parquet: %v", ErrInvalidDataset, err)
 	}
 
+	ds := buildDataset(queries, corpus, answers, qrels, qas)
+	if err := validateDataset(ds); err != nil {
+		return nil, err
+	}
+	hash, err := canonicalDatasetHash(queries, corpus, answers, qrels, qas)
+	if err != nil {
+		return nil, fmt.Errorf("%w: compute dataset hash: %v", ErrInvalidDataset, err)
+	}
+	pairs := ds.Iterate()
+	return &types.EvaluationDataset{
+		SHA256:      hash,
+		SampleCount: len(pairs),
+		Pairs:       pairs,
+	}, nil
+}
+
+func buildDataset(
+	queries []TextInfo,
+	corpus []TextInfo,
+	answers []TextInfo,
+	qrels []RelsInfo,
+	qas []QaInfo,
+) dataset {
 	res := dataset{
 		queries: make(map[int64]string),  // qid -> question text
 		corpus:  make(map[int64]string),  // pid -> passage text
@@ -97,6 +167,75 @@ func DefaultDataset() dataset {
 		res.qas[qi.QID] = qi.AID
 	}
 	return res
+}
+
+func validateDataset(ds dataset) error {
+	if len(ds.queries) == 0 {
+		return fmt.Errorf("%w: dataset has no queries", ErrInvalidDataset)
+	}
+	for qid := range ds.queries {
+		if _, ok := ds.qas[qid]; !ok {
+			return fmt.Errorf("%w: query %d has no answer", ErrInvalidDataset, qid)
+		}
+		pids, ok := ds.qrels[qid]
+		if !ok || len(pids) == 0 {
+			return fmt.Errorf("%w: query %d has no related passages", ErrInvalidDataset, qid)
+		}
+	}
+	for qid, aid := range ds.qas {
+		if _, ok := ds.queries[qid]; !ok {
+			return fmt.Errorf("%w: answer maps unknown query %d", ErrInvalidDataset, qid)
+		}
+		if _, ok := ds.answers[aid]; !ok {
+			return fmt.Errorf("%w: query %d references unknown answer %d", ErrInvalidDataset, qid, aid)
+		}
+	}
+	for qid, pids := range ds.qrels {
+		if _, ok := ds.queries[qid]; !ok {
+			return fmt.Errorf("%w: qrel maps unknown query %d", ErrInvalidDataset, qid)
+		}
+		for _, pid := range pids {
+			if _, ok := ds.corpus[pid]; !ok {
+				return fmt.Errorf("%w: query %d references unknown passage %d", ErrInvalidDataset, qid, pid)
+			}
+		}
+	}
+	return nil
+}
+
+func canonicalDatasetHash(
+	queries []TextInfo,
+	corpus []TextInfo,
+	answers []TextInfo,
+	qrels []RelsInfo,
+	qas []QaInfo,
+) (string, error) {
+	sort.Slice(queries, func(i, j int) bool { return queries[i].ID < queries[j].ID })
+	sort.Slice(corpus, func(i, j int) bool { return corpus[i].ID < corpus[j].ID })
+	sort.Slice(answers, func(i, j int) bool { return answers[i].ID < answers[j].ID })
+	sort.Slice(qrels, func(i, j int) bool {
+		if qrels[i].QID != qrels[j].QID {
+			return qrels[i].QID < qrels[j].QID
+		}
+		return qrels[i].PID < qrels[j].PID
+	})
+	sort.Slice(qas, func(i, j int) bool {
+		if qas[i].QID != qas[j].QID {
+			return qas[i].QID < qas[j].QID
+		}
+		return qas[i].AID < qas[j].AID
+	})
+
+	h := sha256.New()
+	for _, rows := range []any{queries, corpus, answers, qrels, qas} {
+		encoded, err := json.Marshal(rows)
+		if err != nil {
+			return "", err
+		}
+		h.Write(encoded)
+		h.Write([]byte{'\n'})
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // dataset represents the in-memory dataset structure

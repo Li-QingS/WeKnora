@@ -11,9 +11,7 @@ import (
 // EvaluationService defines operations for evaluation tasks
 type EvaluationService interface {
 	// Evaluation starts a new evaluation task
-	Evaluation(ctx context.Context, datasetID string, knowledgeBaseID string,
-		chatModelID string, rerankModelID string,
-	) (*types.EvaluationDetail, error)
+	Evaluation(ctx context.Context, opts *types.EvaluationOptions) (*types.EvaluationDetail, error)
 	// EvaluationResult retrieves evaluation result by task ID
 	EvaluationResult(ctx context.Context, taskID string) (*types.EvaluationDetail, error)
 	// ListEvaluationRuns lists tenant-scoped evaluation runs with pagination.
@@ -77,6 +75,6 @@ type EvalHook interface {
 
 // DatasetService defines operations for dataset management
 type DatasetService interface {
-	// GetDatasetByID retrieves QA pairs from dataset by ID
-	GetDatasetByID(ctx context.Context, datasetID string) ([]*types.QAPair, error)
+	// GetDatasetByID loads, validates and hashes the named dataset.
+	GetDatasetByID(ctx context.Context, datasetID string) (*types.EvaluationDataset, error)
 }

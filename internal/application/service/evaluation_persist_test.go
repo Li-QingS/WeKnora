@@ -266,6 +266,7 @@ func (s *evalKnowledgeBaseService) DeleteKnowledgeBase(context.Context, string) 
 
 type evalKnowledgeService struct {
 	interfaces.KnowledgeService
+	err error
 }
 
 func (s *evalKnowledgeService) CreateKnowledgeFromPassageSync(
@@ -274,6 +275,9 @@ func (s *evalKnowledgeService) CreateKnowledgeFromPassageSync(
 	[]string,
 	string,
 ) (*types.Knowledge, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return &types.Knowledge{ID: "knowledge-1"}, nil
 }
 
@@ -294,18 +298,19 @@ func (s *evalSessionService) KnowledgeQAByEvent(
 }
 
 type evalDatasetService struct {
-	pairs []*types.QAPair
-	err   error
+	dataset *types.EvaluationDataset
+	err     error
 }
 
-func (d *evalDatasetService) GetDatasetByID(context.Context, string) ([]*types.QAPair, error) {
-	return d.pairs, d.err
+func (d *evalDatasetService) GetDatasetByID(context.Context, string) (*types.EvaluationDataset, error) {
+	return d.dataset, d.err
 }
 
 func newEvaluationPersistTestService(
 	repo interfaces.EvaluationRunRepository,
 	models *evalModelService,
 	dataset *evalDatasetService,
+	knowledge ...*evalKnowledgeService,
 ) *EvaluationService {
 	cfg := &config.Config{
 		Conversation: &config.ConversationConfig{
@@ -321,11 +326,15 @@ func newEvaluationPersistTestService(
 			Summary:             &config.SummaryConfig{MaxTokens: 512, Temperature: 0.7},
 		},
 	}
+	knowledgeService := &evalKnowledgeService{}
+	if len(knowledge) > 0 {
+		knowledgeService = knowledge[0]
+	}
 	return &EvaluationService{
 		config:                  cfg,
 		dataset:                 dataset,
 		knowledgeBaseService:    &evalKnowledgeBaseService{},
-		knowledgeService:        &evalKnowledgeService{},
+		knowledgeService:        knowledgeService,
 		sessionService:          &evalSessionService{},
 		modelService:            models,
 		evaluationRunRepository: repo,
@@ -377,6 +386,27 @@ func failingEvalDataset() *evalDatasetService {
 	return &evalDatasetService{err: errors.New("dataset boom")}
 }
 
+func successEvalDataset() *evalDatasetService {
+	return &evalDatasetService{dataset: &types.EvaluationDataset{
+		SHA256:      "dataset-hash",
+		SampleCount: 1,
+		Pairs: []*types.QAPair{
+			{
+				QID:      1,
+				Question: "question",
+				PIDs:     []int{1},
+				Passages: []string{"passage"},
+				AID:      1,
+				Answer:   "answer",
+			},
+		},
+	}}
+}
+
+func failingEvalKnowledge() *evalKnowledgeService {
+	return &evalKnowledgeService{err: errors.New("knowledge boom")}
+}
+
 func waitForEvaluationRunStatus(
 	t *testing.T,
 	repo *fakeEvaluationRunRepository,
@@ -401,10 +431,15 @@ func waitForEvaluationRunStatus(
 func TestEvaluationPersist_CreatesPendingAndSanitizedSnapshot(t *testing.T) {
 	repo := newFakeEvaluationRunRepository()
 	repo.transitionGate = make(chan struct{})
-	svc := newEvaluationPersistTestService(repo, evalPersistModels(), failingEvalDataset())
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), successEvalDataset(), failingEvalKnowledge())
 	ctx := evaluationPersistCtx(1)
 
-	detail, err := svc.Evaluation(ctx, "dataset-1", "kb-1", "chat-1", "rerank-1")
+	detail, err := svc.Evaluation(ctx, &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+	})
 	require.NoError(t, err)
 
 	run, err := repo.GetByID(ctx, 1, detail.Task.ID)
@@ -416,6 +451,8 @@ func TestEvaluationPersist_CreatesPendingAndSanitizedSnapshot(t *testing.T) {
 	var snapshot types.EvaluationConfigSnapshot
 	require.NoError(t, json.Unmarshal(run.ConfigSnapshot, &snapshot))
 	assert.Equal(t, "dataset-1", snapshot.Dataset.ID)
+	assert.Equal(t, "dataset-hash", snapshot.Dataset.SHA256)
+	assert.Equal(t, 1, snapshot.Dataset.SampleCount)
 	require.Len(t, snapshot.Models, 3)
 	assert.Equal(t, "embed-1", snapshot.Models[0].ID)
 	assert.Equal(t, "chat-1", snapshot.Models[1].ID)
@@ -442,12 +479,18 @@ func TestEvaluationPersist_CreatesPendingAndSanitizedSnapshot(t *testing.T) {
 
 func TestEvaluationPersist_ConfigHashStableForSameConfig(t *testing.T) {
 	repo := newFakeEvaluationRunRepository()
-	svc := newEvaluationPersistTestService(repo, evalPersistModels(), failingEvalDataset())
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), successEvalDataset(), failingEvalKnowledge())
 	ctx := evaluationPersistCtx(1)
 
-	first, err := svc.Evaluation(ctx, "dataset-1", "kb-1", "chat-1", "rerank-1")
+	opts := &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+	}
+	first, err := svc.Evaluation(ctx, opts)
 	require.NoError(t, err)
-	second, err := svc.Evaluation(ctx, "dataset-1", "kb-1", "chat-1", "rerank-1")
+	second, err := svc.Evaluation(ctx, opts)
 	require.NoError(t, err)
 
 	firstRun, err := repo.GetByID(ctx, 1, first.Task.ID)
@@ -463,35 +506,33 @@ func TestEvaluationPersist_ConfigHashStableForSameConfig(t *testing.T) {
 
 func TestEvaluationPersist_FailureMarksFailedWithErrMsg(t *testing.T) {
 	repo := newFakeEvaluationRunRepository()
-	svc := newEvaluationPersistTestService(repo, evalPersistModels(), failingEvalDataset())
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), successEvalDataset(), failingEvalKnowledge())
 	ctx := evaluationPersistCtx(1)
 
-	detail, err := svc.Evaluation(ctx, "dataset-1", "kb-1", "chat-1", "rerank-1")
+	detail, err := svc.Evaluation(ctx, &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+	})
 	require.NoError(t, err)
 
 	run := waitForEvaluationRunStatus(t, repo, 1, detail.Task.ID, types.EvaluationStatueFailed)
-	assert.Contains(t, run.ErrMsg, "dataset boom")
+	assert.Contains(t, run.ErrMsg, "knowledge boom")
 	require.NotNil(t, run.FinishedAt)
 }
 
 func TestEvaluationPersist_SuccessCompletesWithMetrics(t *testing.T) {
 	repo := newFakeEvaluationRunRepository()
-	dataset := &evalDatasetService{
-		pairs: []*types.QAPair{
-			{
-				QID:      1,
-				Question: "question",
-				PIDs:     []int{1},
-				Passages: []string{"passage"},
-				AID:      1,
-				Answer:   "answer",
-			},
-		},
-	}
-	svc := newEvaluationPersistTestService(repo, evalPersistModels(), dataset)
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), successEvalDataset())
 	ctx := evaluationPersistCtx(1)
 
-	detail, err := svc.Evaluation(ctx, "dataset-1", "kb-1", "chat-1", "rerank-1")
+	detail, err := svc.Evaluation(ctx, &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+	})
 	require.NoError(t, err)
 
 	run := waitForEvaluationRunStatus(t, repo, 1, detail.Task.ID, types.EvaluationStatueSuccess)
@@ -504,7 +545,62 @@ func TestEvaluationPersist_SuccessCompletesWithMetrics(t *testing.T) {
 	require.NoError(t, json.Unmarshal(run.ConfigSnapshot, &snapshot))
 	assert.Equal(t, "dataset-1", snapshot.Dataset.ID)
 	assert.Equal(t, 1, snapshot.Dataset.SampleCount)
-	assert.NotEmpty(t, snapshot.Dataset.SHA256)
+	assert.Equal(t, "dataset-hash", snapshot.Dataset.SHA256)
+}
+
+func TestEvaluationPersist_DatasetErrorFailsBeforeCreate(t *testing.T) {
+	repo := newFakeEvaluationRunRepository()
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), failingEvalDataset())
+	ctx := evaluationPersistCtx(1)
+
+	_, err := svc.Evaluation(ctx, &types.EvaluationOptions{DatasetID: "dataset-1"})
+	require.ErrorContains(t, err, "dataset boom")
+
+	runs, total, err := repo.List(ctx, 1, nil, &types.Pagination{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.Empty(t, runs)
+	assert.Zero(t, total)
+}
+
+func TestEvaluationPersist_ParamsOverrideAffectsConfigHash(t *testing.T) {
+	repo := newFakeEvaluationRunRepository()
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), successEvalDataset())
+	ctx := evaluationPersistCtx(1)
+
+	temperature := 0.9
+	embeddingTopK := 15
+	base := &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+	}
+	withParams := &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+		Params: &types.EvaluationParamsOverride{
+			EmbeddingTopK: &embeddingTopK,
+			SummaryConfig: &types.SummaryConfigOverride{Temperature: &temperature},
+		},
+	}
+
+	baseDetail, err := svc.Evaluation(ctx, base)
+	require.NoError(t, err)
+	overrideDetail, err := svc.Evaluation(ctx, withParams)
+	require.NoError(t, err)
+
+	baseRun, err := repo.GetByID(ctx, 1, baseDetail.Task.ID)
+	require.NoError(t, err)
+	overrideRun, err := repo.GetByID(ctx, 1, overrideDetail.Task.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, baseRun.ConfigHash, overrideRun.ConfigHash)
+
+	var params types.ChatManage
+	require.NoError(t, json.Unmarshal(overrideRun.Params, &params))
+	assert.Equal(t, 15, params.EmbeddingTopK)
+	assert.Equal(t, 0.9, params.SummaryConfig.Temperature)
 }
 
 func TestEvaluationPersist_StartupScanMarksStaleRuns(t *testing.T) {

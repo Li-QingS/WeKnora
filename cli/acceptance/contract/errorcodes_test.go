@@ -207,6 +207,14 @@ func identToErrorCode(name string) (cmdutil.ErrorCode, bool) {
 		return cmdutil.CodeOperationFailed, true
 	case "CodeOperationCancelled":
 		return cmdutil.CodeOperationCancelled, true
+	case "CodeEvalRegression":
+		return cmdutil.CodeEvalRegression, true
+	case "CodeEvalConfigError":
+		return cmdutil.CodeEvalConfigError, true
+	case "CodeEvalServiceUnavailable":
+		return cmdutil.CodeEvalServiceUnavailable, true
+	case "CodeEvalRunFailed":
+		return cmdutil.CodeEvalRunFailed, true
 	case "CodeInternalError":
 		return cmdutil.CodeInternalError, true
 	}

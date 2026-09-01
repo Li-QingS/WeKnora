@@ -108,6 +108,14 @@ const (
 	// from network.error (pre-stream transport failure) so users see the
 	// stream specifically aborted, not a connection that never opened.
 	CodeSSEStreamAborted ErrorCode = "local.sse_stream_aborted"
+
+	// eval.* codes carry the WP2 runner exit-code contract. They are
+	// documented on `weknora eval run --help` and intentionally differ from
+	// the generic CLI matrix because CI consumes them directly.
+	CodeEvalRegression         ErrorCode = "eval.regression"          // exit 2, reserved for WP3
+	CodeEvalConfigError        ErrorCode = "eval.config_error"        // exit 3
+	CodeEvalServiceUnavailable ErrorCode = "eval.service_unavailable" // exit 4
+	CodeEvalRunFailed          ErrorCode = "eval.run_failed"          // exit 5
 )
 
 // Error is the typed error implementations carry through the call stack.
@@ -126,7 +134,7 @@ type Error struct {
 	Silent            bool
 	RetryArgv         []string // Directly-executable argv array, distinct from prose Hint
 	RetryAfterSeconds int      // HTTP Retry-After header semantics (transport-level retry hint)
-	Detail            any    // Structured detail for envelope.error.detail (e.g. unknown-subcommand available[])
+	Detail            any      // Structured detail for envelope.error.detail (e.g. unknown-subcommand available[])
 	Risk              *RiskInfo
 }
 
@@ -450,6 +458,9 @@ func AllCodes() []ErrorCode {
 		CodeSSEStreamAborted, CodeSessionCreateFailed,
 		// operation
 		CodeOperationTimeout, CodeOperationFailed, CodeOperationCancelled,
+		// eval runner contract
+		CodeEvalRegression, CodeEvalConfigError,
+		CodeEvalServiceUnavailable, CodeEvalRunFailed,
 		// internal catch-all
 		CodeInternalError,
 	}
