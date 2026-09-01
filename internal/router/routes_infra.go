@@ -102,6 +102,12 @@ func RegisterModelCallRoutes(r *gin.RouterGroup, h *handler.ModelCallHandler, g 
 	}
 }
 
+// RegisterEmbeddingCacheRoutes exposes embedding cache statistics.
+func RegisterEmbeddingCacheRoutes(r *gin.RouterGroup, h *handler.EmbeddingCacheHandler, g *rbacGuards) {
+	cache := g.apiKeyGroup(r.Group("/embedding-cache"), apiKeyManageModels(apiKeyFullAccess()))
+	cache.GET("/stats", g.Admin(), h.Stats)
+}
+
 func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.InitializationHandler, g *rbacGuards) {
 	// 初始化接口
 	// GetCurrentConfigByKB 是只读，Viewer+ 即可（KB 受限 key 可读其范围内的 KB）。

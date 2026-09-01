@@ -57,6 +57,7 @@ type RouterParams struct {
 	ModelHandler                 *handler.ModelHandler
 	ModelCredentialsHandler      *handler.ModelCredentialsHandler
 	ModelCallHandler             *handler.ModelCallHandler
+	EmbeddingCacheHandler        *handler.EmbeddingCacheHandler
 	SandboxConfigHandler         *handler.SandboxConfigHandler
 	SandboxSkillHandler          *handler.SandboxSkillHandler
 	EvaluationHandler            *handler.EvaluationHandler
@@ -267,6 +268,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterMessageRoutes(v1, params.MessageHandler, rbacGuards)
 		RegisterModelRoutes(v1, params.ModelHandler, params.ModelCredentialsHandler, rbacGuards)
 		RegisterModelCallRoutes(v1, params.ModelCallHandler, rbacGuards)
+		RegisterEmbeddingCacheRoutes(v1, params.EmbeddingCacheHandler, rbacGuards)
 		RegisterSandboxConfigRoutes(v1, params.SandboxConfigHandler, params.SandboxSkillHandler, rbacGuards)
 		RegisterEvaluationRoutes(v1, params.EvaluationHandler, rbacGuards)
 		RegisterInitializationRoutes(v1, params.InitializationHandler, rbacGuards)

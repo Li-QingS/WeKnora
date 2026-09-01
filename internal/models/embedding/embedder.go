@@ -106,7 +106,8 @@ func NewEmbedder(config Config, pooler EmbedderPooler, ollamaService *ollama.Oll
 	if langfuse.GetManager().Enabled() {
 		e = &langfuseEmbedder{inner: e}
 	}
-	return wrapEmbeddingCost(e, config.TenantID), nil
+	e = wrapEmbeddingCost(e, config.TenantID)
+	return wrapEmbeddingCache(e, config.TenantID, pooler), nil
 }
 
 func newEmbedder(config Config, pooler EmbedderPooler, ollamaService *ollama.OllamaService) (Embedder, error) {
