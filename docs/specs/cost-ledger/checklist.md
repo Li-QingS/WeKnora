@@ -40,7 +40,7 @@
 
 ## 端到端场景
 
-- [x] 场景 1（正常记账）：Lite + mock 模型 → `make eval-baseline` 成功 → DB 47 条记录，Chat/Embedding Token 与费用正确，API 明细/汇总可查。
+- [x] 场景 1（正常记账）：Lite + mock 模型端到端 47 条记录验证；另用真实模型（qwen3.7-text-embedding / qwen3.8-27b）完整跑通，Token 与费用正确，API 明细/汇总可查。
 - [x] 场景 2（失败与未知价格）：cost wrapper 失败路径单测覆盖；未知价格单测确认费用 null。
 - [x] 场景 3（隔离与脱敏）：repository 单测覆盖租户过滤；记录字段无 Prompt/Key。
 
