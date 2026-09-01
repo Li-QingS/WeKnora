@@ -99,6 +99,7 @@ type Chat interface {
 }
 
 type ChatConfig struct {
+	TenantID  uint64
 	Source    types.ModelSource
 	BaseURL   string
 	ModelName string
@@ -124,6 +125,7 @@ func ConfigFromModel(m *types.Model, appID, appSecret string) *ChatConfig {
 		return nil
 	}
 	return &ChatConfig{
+		TenantID:       m.TenantID,
 		ModelID:        m.ID,
 		APIKey:         m.Parameters.APIKey,
 		BaseURL:        m.Parameters.BaseURL,
@@ -154,7 +156,8 @@ func NewChat(config *ChatConfig, ollamaService *ollama.OllamaService) (Chat, err
 	c, err = wrapChatLangfuse(c, err)
 	// Outermost: hold the per-model concurrency slot only around the real
 	// provider round-trip, so the wait is excluded from debug/langfuse timing.
-	return wrapChatConcurrency(c, config.MaxConcurrency, err)
+	c, err = wrapChatConcurrency(c, config.MaxConcurrency, err)
+	return wrapChatCost(c, err, config.TenantID)
 }
 
 // NewRemoteChat 根据 provider 创建远程聊天实例。

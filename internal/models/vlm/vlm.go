@@ -22,6 +22,7 @@ type VLM interface {
 
 // Config holds the configuration needed to create a VLM instance.
 type Config struct {
+	TenantID      uint64
 	Source        types.ModelSource
 	BaseURL       string
 	ModelName     string
@@ -56,6 +57,7 @@ func ConfigFromModel(m *types.Model, appID, appSecret string) *Config {
 		}
 	}
 	return &Config{
+		TenantID:       m.TenantID,
 		ModelID:        m.ID,
 		APIKey:         m.Parameters.APIKey,
 		BaseURL:        m.Parameters.BaseURL,
@@ -94,7 +96,8 @@ func NewVLM(config *Config, ollamaService *ollama.OllamaService) (VLM, error) {
 	v, err = wrapVLMLangfuse(v, nil)
 	// Outermost: hold the per-model concurrency slot only around the real
 	// provider round-trip, so the wait is excluded from debug/langfuse timing.
-	return wrapVLMConcurrency(v, config.MaxConcurrency, err)
+	v, err = wrapVLMConcurrency(v, config.MaxConcurrency, err)
+	return wrapVLMCost(v, err, config.TenantID)
 }
 
 func newVLM(config *Config, ollamaService *ollama.OllamaService) (VLM, error) {

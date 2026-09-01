@@ -30,6 +30,7 @@ type ASR interface {
 
 // Config holds the configuration needed to create an ASR instance.
 type Config struct {
+	TenantID  uint64
 	Source    types.ModelSource
 	BaseURL   string
 	ModelName string
@@ -48,6 +49,7 @@ func ConfigFromModel(m *types.Model) *Config {
 		return nil
 	}
 	return &Config{
+		TenantID:      m.TenantID,
 		ModelID:       m.ID,
 		APIKey:        m.Parameters.APIKey,
 		BaseURL:       m.Parameters.BaseURL,
@@ -60,6 +62,8 @@ func ConfigFromModel(m *types.Model) *Config {
 // NewASR creates an ASR instance based on the provided configuration.
 // All ASR vendors use the OpenAI-compatible /v1/audio/transcriptions API.
 func NewASR(config *Config) (ASR, error) {
-	a, err := NewOpenAIASR(config)
-	return wrapASRLangfuse(a, err)
+	raw, err := NewOpenAIASR(config)
+	var a ASR = raw
+	a, err = wrapASRLangfuse(a, err)
+	return wrapASRCost(a, err, config.TenantID)
 }

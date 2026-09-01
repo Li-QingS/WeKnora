@@ -87,6 +87,21 @@ func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHan
 	}
 }
 
+// RegisterModelCallRoutes exposes the model call ledger and price management.
+func RegisterModelCallRoutes(r *gin.RouterGroup, h *handler.ModelCallHandler, g *rbacGuards) {
+	calls := g.apiKeyGroup(r.Group("/model-calls"), apiKeyManageModels(apiKeyFullAccess()))
+	{
+		calls.GET("", g.Admin(), h.List)
+		calls.GET("/summary", g.Admin(), h.Summary)
+	}
+	prices := g.apiKeyGroup(r.Group("/model-prices"), apiKeyManageModels(apiKeyFullAccess()))
+	{
+		prices.GET("", g.Admin(), h.ListPrices)
+		prices.GET("/:modelId", g.Admin(), h.GetPrice)
+		prices.PUT("/:modelId", g.Admin(), h.UpsertPrice)
+	}
+}
+
 func RegisterInitializationRoutes(r *gin.RouterGroup, handler *handler.InitializationHandler, g *rbacGuards) {
 	// 初始化接口
 	// GetCurrentConfigByKB 是只读，Viewer+ 即可（KB 受限 key 可读其范围内的 KB）。

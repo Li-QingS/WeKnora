@@ -79,6 +79,7 @@ func (d *DocumentInfo) UnmarshalJSON(data []byte) error {
 }
 
 type RerankerConfig struct {
+	TenantID    uint64
 	APIKey      string
 	BaseURL     string
 	ModelName   string
@@ -100,6 +101,7 @@ func ConfigFromModel(m *types.Model, appID, appSecret string) *RerankerConfig {
 		return nil
 	}
 	return &RerankerConfig{
+		TenantID:      m.TenantID,
 		ModelID:       m.ID,
 		APIKey:        m.Parameters.APIKey,
 		BaseURL:       m.Parameters.BaseURL,
@@ -122,7 +124,8 @@ func NewReranker(config *RerankerConfig) (Reranker, error) {
 	if logger.LLMDebugEnabled() {
 		r = &debugReranker{inner: r}
 	}
-	return wrapRerankerLangfuse(r, nil)
+	r, err = wrapRerankerLangfuse(r, nil)
+	return wrapRerankerCost(r, config.TenantID), nil
 }
 
 // customHeaderSetter 表示支持注入自定义 HTTP header 的 reranker 实现。

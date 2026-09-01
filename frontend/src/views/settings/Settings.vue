@@ -113,6 +113,11 @@
                     <ModelSettings />
                   </div>
 
+                  <!-- 模型用量 -->
+                  <div v-if="currentSection === 'modelusage'" class="section">
+                    <ModelUsageSettings />
+                  </div>
+
                   <!-- 网络搜索配置 -->
                   <div v-if="currentSection === 'websearch'" class="section">
                     <WebSearchSettings />
@@ -225,6 +230,7 @@ import TenantInfo from './TenantInfo.vue'
 import UserProfile from './UserProfile.vue'
 import GeneralSettings from './GeneralSettings.vue'
 import ModelSettings from './ModelSettings.vue'
+import ModelUsageSettings from './ModelUsageSettings.vue'
 import OllamaSettings from './OllamaSettings.vue'
 import McpSettings from './McpSettings.vue'
 import WebSearchSettings from './WebSearchSettings.vue'
@@ -358,6 +364,7 @@ const navItems = computed(() => {
     { key: 'ollama', icon: 'server', label: 'Ollama' },
     { key: 'weknoracloud', icon: '', label: 'WeKnora Cloud' },
     { key: 'models', icon: 'control-platform', label: t('settings.modelManagement') },
+    { key: 'modelusage', icon: 'chart-bar', label: '模型用量' },
     { key: 'websearch', icon: 'search', label: t('settings.webSearchConfig') },
     { key: 'chathistory', icon: 'chat', label: t('chatHistorySettings.title') },
     { key: 'memory', icon: 'bulletpoint', label: t('memoryWorkspaceSettings.title') },
@@ -407,7 +414,7 @@ const navGroups = computed<NavGroup[]>(() => {
     {
       key: 'models_runtime',
       label: t('settings.navGroups.modelsRuntime'),
-      items: pickItems(['models', 'ollama', 'weknoracloud']),
+      items: pickItems(['models', 'modelusage', 'ollama', 'weknoracloud']),
     },
     {
       key: 'integrations',

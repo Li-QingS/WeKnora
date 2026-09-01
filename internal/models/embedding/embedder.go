@@ -41,6 +41,7 @@ type EmbedderType string
 
 // Config represents the embedder configuration
 type Config struct {
+	TenantID                  uint64            `json:"tenant_id"`
 	Source                    types.ModelSource `json:"source"`
 	BaseURL                   string            `json:"base_url"`
 	ModelName                 string            `json:"model_name"`
@@ -68,6 +69,7 @@ func ConfigFromModel(m *types.Model, appID, appSecret string) Config {
 		return Config{}
 	}
 	return Config{
+		TenantID:                  m.TenantID,
 		Source:                    m.Source,
 		BaseURL:                   m.Parameters.BaseURL,
 		APIKey:                    m.Parameters.APIKey,
@@ -104,7 +106,7 @@ func NewEmbedder(config Config, pooler EmbedderPooler, ollamaService *ollama.Oll
 	if langfuse.GetManager().Enabled() {
 		e = &langfuseEmbedder{inner: e}
 	}
-	return e, nil
+	return wrapEmbeddingCost(e, config.TenantID), nil
 }
 
 func newEmbedder(config Config, pooler EmbedderPooler, ollamaService *ollama.OllamaService) (Embedder, error) {

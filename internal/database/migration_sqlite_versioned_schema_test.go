@@ -15,6 +15,8 @@ import (
 // 000063 knowledge multi-tags.
 var versionedSQLiteTables = []string{
 	"evaluation_runs",
+	"model_call_records",
+	"model_prices",
 	"task_pending_ops",
 	"task_dead_letters",
 	"system_settings",
@@ -37,7 +39,7 @@ var versionedSQLiteColumns = map[string][]string{
 	}, // 000088
 }
 
-const expectedSQLiteMigrationVersion = 13
+const expectedSQLiteMigrationVersion = 15
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)
