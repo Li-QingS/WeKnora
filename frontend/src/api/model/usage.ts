@@ -54,6 +54,12 @@ export interface ModelPrice {
   currency?: string
 }
 
+export interface EmbeddingCacheStats {
+  hits: number
+  misses: number
+  provider_calls: number
+}
+
 export function listModelCalls(params: Record<string, unknown>): Promise<{ data: ModelCallRecord[]; total: number }> {
   return new Promise((resolve, reject) => {
     get('/api/v1/model-calls', { params })
@@ -83,6 +89,14 @@ export function listModelPrices(): Promise<ModelPrice[]> {
 export function upsertModelPrice(modelId: string, price: Partial<ModelPrice>): Promise<ModelPrice> {
   return new Promise((resolve, reject) => {
     put(`/api/v1/model-prices/${modelId}`, price)
+      .then((response: any) => resolve(response.data))
+      .catch(reject)
+  })
+}
+
+export function getEmbeddingCacheStats(): Promise<EmbeddingCacheStats> {
+  return new Promise((resolve, reject) => {
+    get('/api/v1/embedding-cache/stats')
       .then((response: any) => resolve(response.data))
       .catch(reject)
   })

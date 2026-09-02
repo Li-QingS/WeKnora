@@ -7,6 +7,24 @@
       </div>
     </div>
 
+    <div class="usage-section settings-group">
+      <h3>Embedding 缓存</h3>
+      <dl class="cache-stats">
+        <div class="cache-stat">
+          <dt>命中（hits）</dt>
+          <dd>{{ cacheNumber(cacheStats?.hits) }}</dd>
+        </div>
+        <div class="cache-stat">
+          <dt>未命中（misses）</dt>
+          <dd>{{ cacheNumber(cacheStats?.misses) }}</dd>
+        </div>
+        <div class="cache-stat">
+          <dt>模型请求（provider_calls）</dt>
+          <dd>{{ cacheNumber(cacheStats?.provider_calls) }}</dd>
+        </div>
+      </dl>
+    </div>
+
     <t-loading :loading="loading" size="small">
       <div class="usage-section">
         <h3>汇总</h3>
@@ -77,15 +95,28 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { getModelCallSummary, listModelCalls } from '@/api/model/usage'
-import type { ModelCallRecord, ModelCallSummaryItem } from '@/api/model/usage'
+import {
+  getEmbeddingCacheStats,
+  getModelCallSummary,
+  listModelCalls,
+} from '@/api/model/usage'
+import type {
+  EmbeddingCacheStats,
+  ModelCallRecord,
+  ModelCallSummaryItem,
+} from '@/api/model/usage'
 
 const summary = ref<ModelCallSummaryItem[]>([])
 const records = ref<ModelCallRecord[]>([])
 const loading = ref(false)
+const cacheStats = ref<EmbeddingCacheStats | null>(null)
 
 function formatCost(value: number | null | undefined): string {
   return value == null ? 'unknown' : `$${value.toFixed(4)}`
+}
+
+function cacheNumber(value: number | undefined): number | string {
+  return value == null ? 'unknown' : value
 }
 
 onMounted(async () => {
@@ -96,6 +127,11 @@ onMounted(async () => {
     records.value = result.data
   } finally {
     loading.value = false
+  }
+  try {
+    cacheStats.value = await getEmbeddingCacheStats()
+  } catch {
+    cacheStats.value = null
   }
 })
 </script>
@@ -126,6 +162,42 @@ onMounted(async () => {
 .usage-section h3 {
   margin: 0 0 10px;
   font-size: 14px;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.cache-stats {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.cache-stat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--td-component-stroke, #e7e7e7);
+}
+
+.cache-stat:last-child {
+  border-bottom: none;
+}
+
+.cache-stat dt {
+  color: var(--td-text-color-secondary, #666);
+  font-size: 13px;
+}
+
+.cache-stat dd {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
 }
 
 .usage-table {
