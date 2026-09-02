@@ -116,11 +116,12 @@ type PriceSnapshot struct {
 
 // ModelCallFilter carries optional list/summary filters.
 type ModelCallFilter struct {
-	ModelID   string
-	ModelType string
-	Status    string
-	From      *time.Time
-	To        *time.Time
+	ModelID        string
+	ModelType      string
+	Status         string
+	RequestGroupID string
+	From           *time.Time
+	To             *time.Time
 }
 
 // ModelCallSummaryItem is one aggregate row by model.
@@ -136,5 +137,6 @@ type ModelCallSummaryItem struct {
 	TotalTokens      int64    `json:"total_tokens"`
 	CacheReadTokens  int64    `json:"cache_read_tokens"`
 	CacheWriteTokens int64    `json:"cache_write_tokens"`
+	CacheMissTokens  int64    `json:"cache_miss_tokens"`
 	EstimatedCostUSD *float64 `json:"estimated_cost_usd"`
 }

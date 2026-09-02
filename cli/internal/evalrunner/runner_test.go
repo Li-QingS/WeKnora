@@ -158,6 +158,25 @@ func TestRunNonWait(t *testing.T) {
 	}
 }
 
+func TestBuildChunking(t *testing.T) {
+	got := buildChunking(RunnerChunking{})
+	if got != nil {
+		t.Fatalf("empty chunking=%+v, want nil", got)
+	}
+
+	got = buildChunking(RunnerChunking{
+		Strategy:     " recursive ",
+		ChunkSize:    1024,
+		ChunkOverlap: 80,
+	})
+	if got == nil {
+		t.Fatal("buildChunking returned nil")
+	}
+	if got.Strategy != "recursive" || got.ChunkSize != 1024 || got.ChunkOverlap != 80 {
+		t.Errorf("chunking=%+v", got)
+	}
+}
+
 func TestRunWithExistingTaskID(t *testing.T) {
 	dir := t.TempDir()
 	client := &fakeEvalClient{

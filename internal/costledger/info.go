@@ -33,6 +33,7 @@ func NewCallInfo(
 	if sessionID, ok := types.SessionIDFromContext(ctx); ok {
 		info.SessionID = sessionID
 	}
+	info.RequestGroupID = types.RequestGroupIDFromContext(ctx)
 	if userID, ok := types.UserIDFromContext(ctx); ok {
 		info.UserID = userID
 	}

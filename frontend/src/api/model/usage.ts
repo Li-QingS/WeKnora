@@ -40,6 +40,7 @@ export interface ModelCallSummaryItem {
   total_tokens: number
   cache_read_tokens: number
   cache_write_tokens: number
+  cache_miss_tokens: number
   estimated_cost_usd: number | null
 }
 
@@ -55,9 +56,17 @@ export interface ModelPrice {
 }
 
 export interface EmbeddingCacheStats {
+  enabled: boolean
   hits: number
   misses: number
   provider_calls: number
+  models?: Array<{
+    model_id: string
+    model_name: string
+    hits: number
+    misses: number
+    provider_calls: number
+  }>
 }
 
 export function listModelCalls(params: Record<string, unknown>): Promise<{ data: ModelCallRecord[]; total: number }> {
@@ -70,9 +79,12 @@ export function listModelCalls(params: Record<string, unknown>): Promise<{ data:
   })
 }
 
-export function getModelCallSummary(): Promise<ModelCallSummaryItem[]> {
+export function getModelCallSummary(params?: Record<string, unknown>): Promise<ModelCallSummaryItem[]> {
   return new Promise((resolve, reject) => {
-    get('/api/v1/model-calls/summary')
+    const request = params
+      ? get('/api/v1/model-calls/summary', { params })
+      : get('/api/v1/model-calls/summary')
+    request
       .then((response: any) => resolve(response.data || []))
       .catch(reject)
   })

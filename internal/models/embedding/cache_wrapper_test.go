@@ -95,6 +95,37 @@ func TestCachedEmbedderSingleHit(t *testing.T) {
 	}
 }
 
+func TestCacheStatsPerModel(t *testing.T) {
+	cache := newFakeCache()
+	SetEmbeddingCache(cache)
+	defer SetEmbeddingCache(nil)
+	ResetCacheStats()
+
+	inner := &countingEmbedder{}
+	embedder := wrapEmbeddingCache(inner, 7, nil)
+	if _, err := embedder.Embed(context.Background(), "hello"); err != nil {
+		t.Fatalf("first Embed: %v", err)
+	}
+	if _, err := embedder.Embed(context.Background(), "hello"); err != nil {
+		t.Fatalf("second Embed: %v", err)
+	}
+
+	stats := CacheStats()
+	if !stats.Enabled {
+		t.Fatal("cache should report enabled")
+	}
+	if len(stats.Models) != 1 {
+		t.Fatalf("models=%+v, want one model", stats.Models)
+	}
+	model := stats.Models[0]
+	if model.ModelID != "embed-id-1" || model.ModelName != "embed-1" {
+		t.Fatalf("model stats=%+v", model)
+	}
+	if model.Hits != 1 || model.Misses != 1 || model.ProviderCalls != 1 {
+		t.Fatalf("model stats=%+v", model)
+	}
+}
+
 func TestCachedEmbedderBatchPartialHit(t *testing.T) {
 	cache := newFakeCache()
 	SetEmbeddingCache(cache)

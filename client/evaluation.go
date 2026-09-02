@@ -34,12 +34,23 @@ type EvaluationDetail struct {
 // EvaluationRequest creates an evaluation run. All model fields are optional;
 // empty values fall back to server defaults.
 type EvaluationRequest struct {
-	DatasetID        string `json:"dataset_id"`
-	KnowledgeBaseID  string `json:"knowledge_base_id,omitempty"`
-	ChatModelID      string `json:"chat_id,omitempty"`
-	RerankModelID    string `json:"rerank_id,omitempty"`
-	EmbeddingModelID string `json:"embedding_id,omitempty"`
-	Params           any    `json:"params,omitempty"`
+	DatasetID        string              `json:"dataset_id"`
+	KnowledgeBaseID  string              `json:"knowledge_base_id,omitempty"`
+	ChatModelID      string              `json:"chat_id,omitempty"`
+	RerankModelID    string              `json:"rerank_id,omitempty"`
+	EmbeddingModelID string              `json:"embedding_id,omitempty"`
+	Chunking         *EvaluationChunking `json:"chunking,omitempty"`
+	Params           any                 `json:"params,omitempty"`
+}
+
+// EvaluationChunking mirrors the server's optional chunking override.
+// Strategy "passthrough" keeps one chunk per corpus passage.
+type EvaluationChunking struct {
+	Strategy     string   `json:"strategy"`
+	ChunkSize    int      `json:"chunk_size"`
+	ChunkOverlap int      `json:"chunk_overlap"`
+	TokenLimit   int      `json:"token_limit,omitempty"`
+	Languages    []string `json:"languages,omitempty"`
 }
 
 // EvaluationRun mirrors one item of GET /evaluation/runs.

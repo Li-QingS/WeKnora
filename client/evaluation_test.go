@@ -39,6 +39,11 @@ func TestStartEvaluation(t *testing.T) {
 		DatasetID:        "demo",
 		ChatModelID:      "chat-1",
 		EmbeddingModelID: "embed-1",
+		Chunking: &EvaluationChunking{
+			Strategy:     "recursive",
+			ChunkSize:    1024,
+			ChunkOverlap: 80,
+		},
 	})
 	if err != nil {
 		t.Fatalf("StartEvaluation: %v", err)
@@ -54,6 +59,13 @@ func TestStartEvaluation(t *testing.T) {
 	}
 	if gotBody["embedding_id"] != "embed-1" {
 		t.Errorf("body embedding_id=%v, want embed-1", gotBody["embedding_id"])
+	}
+	chunking, ok := gotBody["chunking"].(map[string]any)
+	if !ok {
+		t.Fatalf("body chunking=%v, want object", gotBody["chunking"])
+	}
+	if chunking["strategy"] != "recursive" || chunking["chunk_size"] != float64(1024) {
+		t.Errorf("body chunking=%v", chunking)
 	}
 }
 

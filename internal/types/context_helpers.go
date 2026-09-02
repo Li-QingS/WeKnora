@@ -180,6 +180,24 @@ func SessionIDFromContext(ctx context.Context) (string, bool) {
 	return v, ok && v != ""
 }
 
+// WithRequestGroupID returns a derived context carrying the logical group that
+// a set of model calls belongs to (for example an evaluation run ID).
+func WithRequestGroupID(ctx context.Context, requestGroupID string) context.Context {
+	if ctx == nil || requestGroupID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, RequestGroupIDContextKey, requestGroupID)
+}
+
+// RequestGroupIDFromContext extracts the current request group ID.
+func RequestGroupIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	value, _ := ctx.Value(RequestGroupIDContextKey).(string)
+	return value
+}
+
 // WithSandboxTenantID records the session-owner tenant that session→sandbox
 // bindings must be keyed by, independently of the tenant the rest of the
 // pipeline runs as. Callers set it wherever they swap TenantIDContextKey for a

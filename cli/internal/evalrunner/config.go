@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -21,6 +22,7 @@ var configDatasetIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 type RunnerConfig struct {
 	DatasetID  string           `yaml:"dataset_id"`
 	Models     RunnerModels     `yaml:"models"`
+	Chunking   RunnerChunking   `yaml:"chunking"`
 	Retrieval  RunnerRetrieval  `yaml:"retrieval"`
 	Generation RunnerGeneration `yaml:"generation"`
 	Execution  RunnerExecution  `yaml:"execution"`
@@ -40,6 +42,17 @@ type RunnerRetrieval struct {
 	EmbeddingTopK    *int     `yaml:"embedding_top_k"`
 	RerankTopK       *int     `yaml:"rerank_top_k"`
 	RerankThreshold  *float64 `yaml:"rerank_threshold"`
+}
+
+// RunnerChunking holds the optional chunking override. Zero values are
+// resolved by the server to its normal defaults, so omitting the whole
+// section keeps the historical passage-per-chunk evaluation behavior.
+type RunnerChunking struct {
+	Strategy     string   `yaml:"strategy"`
+	ChunkSize    int      `yaml:"chunk_size"`
+	ChunkOverlap int      `yaml:"chunk_overlap"`
+	TokenLimit   int      `yaml:"token_limit"`
+	Languages    []string `yaml:"languages"`
 }
 
 // RunnerGeneration holds optional generation parameter overrides.
@@ -88,6 +101,9 @@ func (c *RunnerConfig) Validate() error {
 	if !configDatasetIDPattern.MatchString(c.DatasetID) {
 		return fmt.Errorf("%w: unsafe dataset_id %q", ErrInvalidConfig, c.DatasetID)
 	}
+	if err := c.Chunking.validate(); err != nil {
+		return err
+	}
 	if err := c.Retrieval.validate(); err != nil {
 		return err
 	}
@@ -108,6 +124,40 @@ func (c *RunnerConfig) Validate() error {
 	}
 	if _, err := time.ParseDuration(c.Execution.Interval); err != nil {
 		return fmt.Errorf("%w: invalid execution.interval %q: %v", ErrInvalidConfig, c.Execution.Interval, err)
+	}
+	return nil
+}
+
+// Enabled reports whether the config pins an explicit chunking override.
+func (c RunnerChunking) Enabled() bool {
+	return c.Strategy != "" || c.ChunkSize != 0 || c.ChunkOverlap != 0 ||
+		c.TokenLimit != 0 || len(c.Languages) > 0
+}
+
+func (c RunnerChunking) validate() error {
+	if !c.Enabled() {
+		return nil
+	}
+	strategy := strings.ToLower(strings.TrimSpace(c.Strategy))
+	if strategy == "" {
+		strategy = "recursive"
+	}
+	switch strategy {
+	case "passthrough", "auto", "heading", "heuristic", "recursive", "legacy":
+	default:
+		return fmt.Errorf("%w: unsupported chunking strategy %q", ErrInvalidConfig, c.Strategy)
+	}
+	if c.ChunkSize < 0 {
+		return fmt.Errorf("%w: chunk_size must be non-negative", ErrInvalidConfig)
+	}
+	if c.ChunkOverlap < 0 {
+		return fmt.Errorf("%w: chunk_overlap must be non-negative", ErrInvalidConfig)
+	}
+	if c.ChunkOverlap > 0 && c.ChunkSize > 0 && c.ChunkOverlap >= c.ChunkSize {
+		return fmt.Errorf("%w: chunk_overlap must be less than chunk_size", ErrInvalidConfig)
+	}
+	if c.TokenLimit < 0 {
+		return fmt.Errorf("%w: token_limit must be non-negative", ErrInvalidConfig)
 	}
 	return nil
 }

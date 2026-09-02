@@ -50,6 +50,36 @@ execution:
 	}
 }
 
+func TestLoadConfigChunking(t *testing.T) {
+	path := writeConfig(t, `
+dataset_id: enterprise_rag
+chunking:
+  strategy: recursive
+  chunk_size: 1024
+  chunk_overlap: 80
+`)
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if !cfg.Chunking.Enabled() {
+		t.Fatal("chunking should be enabled")
+	}
+	if cfg.Chunking.Strategy != "recursive" ||
+		cfg.Chunking.ChunkSize != 1024 ||
+		cfg.Chunking.ChunkOverlap != 80 {
+		t.Errorf("chunking=%+v", cfg.Chunking)
+	}
+}
+
+func TestLoadConfigBadChunking(t *testing.T) {
+	path := writeConfig(t, "dataset_id: demo\nchunking:\n  strategy: recursive\n  chunk_size: 512\n  chunk_overlap: 600")
+	_, err := LoadConfig(path)
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("err=%v, want ErrInvalidConfig", err)
+	}
+}
+
 func TestLoadConfigMissingFile(t *testing.T) {
 	_, err := LoadConfig(filepath.Join(t.TempDir(), "nope.yaml"))
 	if !errors.Is(err, ErrInvalidConfig) {

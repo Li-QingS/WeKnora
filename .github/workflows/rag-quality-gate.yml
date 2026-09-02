@@ -1,9 +1,10 @@
 name: RAG Quality Gate
 
 # Runs the evaluation quality gate on PRs that touch evaluation-related
-# paths. With real service secrets configured it runs a live evaluation and
-# compares against the committed baseline; without secrets it runs the
-# comparator self-test so the gate logic is still exercised on every PR.
+# paths, on demand, and on a nightly schedule. With real service secrets
+# configured it runs a live evaluation and compares against the committed
+# baseline; without secrets it runs the comparator self-test so the gate
+# logic is still exercised on every PR.
 
 on:
   pull_request:
@@ -17,6 +18,8 @@ on:
       - "cli/internal/evalrunner/**"
       - "Makefile"
       - ".github/workflows/rag-quality-gate.yml"
+  schedule:
+    - cron: "0 2 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -66,8 +69,8 @@ jobs:
           WEKNORA_HOST: ${{ secrets.WEKNORA_EVAL_HOST }}
           WEKNORA_TOKEN: ${{ secrets.WEKNORA_EVAL_TOKEN }}
         run: |
-          make eval-ci CONFIG=./evaluation/configs/default.yaml \
-            BASELINE=./evaluation/baselines/demo.yaml
+          make eval-ci CONFIG=./evaluation/configs/enterprise.yaml \
+            BASELINE=./evaluation/baselines/enterprise_rag.yaml
 
       - name: Comparator self-test
         if: steps.secrets.outputs.skip == 'true'

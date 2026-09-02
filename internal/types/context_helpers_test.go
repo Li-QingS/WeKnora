@@ -99,6 +99,17 @@ func TestLanguageLocaleName(t *testing.T) {
 	}
 }
 
+func TestRequestGroupIDContext(t *testing.T) {
+	ctx := context.Background()
+	if got := RequestGroupIDFromContext(ctx); got != "" {
+		t.Fatalf("empty context request group = %q", got)
+	}
+	ctx = WithRequestGroupID(ctx, "evaluation_run_1")
+	if got := RequestGroupIDFromContext(ctx); got != "evaluation_run_1" {
+		t.Fatalf("request group = %q, want evaluation_run_1", got)
+	}
+}
+
 func TestResolveLanguage(t *testing.T) {
 	ctxWithLocale := context.WithValue(context.Background(), LanguageContextKey, "ko-KR")
 

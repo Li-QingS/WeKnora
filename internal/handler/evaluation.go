@@ -26,12 +26,13 @@ func NewEvaluationHandler(evaluationService interfaces.EvaluationService) *Evalu
 
 // EvaluationRequest contains parameters for evaluation request
 type EvaluationRequest struct {
-	DatasetID        string                          `json:"dataset_id"`        // ID of dataset to evaluate
-	KnowledgeBaseID  string                          `json:"knowledge_base_id"` // ID of knowledge base to use
-	ChatModelID      string                          `json:"chat_id"`           // ID of chat model to use
-	RerankModelID    string                          `json:"rerank_id"`         // ID of rerank model to use
-	EmbeddingModelID string                          `json:"embedding_id"`      // ID of embedding model to use
-	Params           *types.EvaluationParamsOverride `json:"params,omitempty"`  // Optional parameter overrides
+	DatasetID        string                          `json:"dataset_id"`         // ID of dataset to evaluate
+	KnowledgeBaseID  string                          `json:"knowledge_base_id"`  // ID of knowledge base to use
+	ChatModelID      string                          `json:"chat_id"`            // ID of chat model to use
+	RerankModelID    string                          `json:"rerank_id"`          // ID of rerank model to use
+	EmbeddingModelID string                          `json:"embedding_id"`       // ID of embedding model to use
+	Chunking         *types.EvaluationChunkingConfig `json:"chunking,omitempty"` // Optional chunking override
+	Params           *types.EvaluationParamsOverride `json:"params,omitempty"`   // Optional parameter overrides
 }
 
 // Evaluation godoc
@@ -79,6 +80,7 @@ func (e *EvaluationHandler) Evaluation(c *gin.Context) {
 		ChatModelID:      secutils.SanitizeForLog(request.ChatModelID),
 		RerankModelID:    secutils.SanitizeForLog(request.RerankModelID),
 		EmbeddingModelID: secutils.SanitizeForLog(request.EmbeddingModelID),
+		Chunking:         request.Chunking,
 		Params:           request.Params,
 	}
 	task, err := e.evaluationService.Evaluation(ctx, opts)
@@ -200,5 +202,64 @@ func (e *EvaluationHandler) GetEvaluationRuns(c *gin.Context) {
 		"total":     result.Total,
 		"page":      result.Page,
 		"page_size": result.PageSize,
+	})
+}
+
+// DeleteEvaluationRun godoc
+// @Summary      删除评测历史
+// @Description  删除当前租户下一条已结束的评测运行记录
+// @Tags         评估
+// @Produce      json
+// @Param        id  path  string  true  "评测运行 ID"
+// @Success      200  {object}  map[string]interface{}  "删除成功"
+// @Failure      400  {object}  errors.AppError         "运行仍在执行"
+// @Failure      404  {object}  errors.AppError         "运行记录不存在"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /evaluation/runs/{id} [delete]
+func (e *EvaluationHandler) DeleteEvaluationRun(c *gin.Context) {
+	ctx := c.Request.Context()
+	taskID := secutils.SanitizeForLog(c.Param("id"))
+	logger.Infof(ctx, "Deleting evaluation run: %s", taskID)
+
+	err := e.evaluationService.DeleteEvaluationRun(ctx, taskID)
+	if err != nil {
+		if stderrors.Is(err, service.ErrEvaluationTaskNotFound) {
+			c.Error(errors.NewNotFoundError("Evaluation task not found"))
+			return
+		}
+		if stderrors.Is(err, service.ErrEvaluationRunActive) {
+			c.Error(errors.NewBadRequestError("Running evaluation cannot be deleted"))
+			return
+		}
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// ListAvailableDatasets godoc
+// @Summary      获取可选评测数据集
+// @Description  返回服务端已就绪的评测数据集元数据
+// @Tags         评估
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}  "数据集列表"
+// @Security     Bearer
+// @Security     ApiKeyAuth
+// @Router       /evaluation/datasets [get]
+func (e *EvaluationHandler) ListAvailableDatasets(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Info(ctx, "Start listing evaluation datasets")
+	datasets, err := e.evaluationService.ListAvailableDatasets(ctx)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    datasets,
 	})
 }

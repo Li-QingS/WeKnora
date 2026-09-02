@@ -67,9 +67,10 @@ func (EvaluationRun) TableName() string {
 // EvaluationConfigSnapshot captures the effective, non-sensitive evaluation
 // configuration so a historical run can be explained and compared.
 type EvaluationConfigSnapshot struct {
-	Dataset DatasetSnapshot  `json:"dataset"`
-	Models  []ModelSnapshot  `json:"models"`
-	Version VersionSignature `json:"version"`
+	Dataset  DatasetSnapshot   `json:"dataset"`
+	Models   []ModelSnapshot   `json:"models"`
+	Chunking *ChunkingSnapshot `json:"chunking,omitempty"`
+	Version  VersionSignature  `json:"version"`
 }
 
 // DatasetSnapshot identifies the dataset and its content fingerprint.
@@ -77,6 +78,24 @@ type DatasetSnapshot struct {
 	ID          string `json:"id"`
 	SHA256      string `json:"sha256"`
 	SampleCount int    `json:"sample_count"`
+}
+
+// EvaluationDatasetMeta is the lightweight metadata shown in dataset pickers.
+type EvaluationDatasetMeta struct {
+	ID          string `json:"id"`
+	SHA256      string `json:"sha256"`
+	SampleCount int    `json:"sample_count"`
+}
+
+// ChunkingSnapshot records the chunking parameters that produced a run.
+// It is only present when the caller pinned an explicit chunking strategy;
+// legacy runs without it keep the historical passage-per-chunk behavior.
+type ChunkingSnapshot struct {
+	Strategy     string   `json:"strategy"`
+	ChunkSize    int      `json:"chunk_size"`
+	ChunkOverlap int      `json:"chunk_overlap"`
+	TokenLimit   int      `json:"token_limit,omitempty"`
+	Languages    []string `json:"languages,omitempty"`
 }
 
 // ModelSnapshot contains only the semantic model identity, never credentials.
@@ -133,8 +152,29 @@ type MetricInput struct {
 
 // MetricResult contains evaluation metrics
 type MetricResult struct {
-	RetrievalMetrics  RetrievalMetrics  `json:"retrieval_metrics"`  // Retrieval performance metrics
-	GenerationMetrics GenerationMetrics `json:"generation_metrics"` // Text generation quality metrics
+	RetrievalMetrics  RetrievalMetrics          `json:"retrieval_metrics"`  // Retrieval performance metrics
+	GenerationMetrics GenerationMetrics         `json:"generation_metrics"` // Text generation quality metrics
+	CostMetrics       *EvaluationCostMetrics    `json:"cost_metrics,omitempty"`
+	LatencyMetrics    *EvaluationLatencyMetrics `json:"latency_metrics,omitempty"`
+}
+
+// EvaluationCostMetrics summarizes model ledger rows attributed to one run.
+type EvaluationCostMetrics struct {
+	ModelCalls       int64    `json:"model_calls"`
+	PromptTokens     int64    `json:"prompt_tokens"`
+	CompletionTokens int64    `json:"completion_tokens"`
+	TotalTokens      int64    `json:"total_tokens"`
+	CacheReadTokens  int64    `json:"cache_read_tokens"`
+	CacheWriteTokens int64    `json:"cache_write_tokens"`
+	EstimatedCostUSD *float64 `json:"estimated_cost_usd"`
+}
+
+// EvaluationLatencyMetrics reports wall-clock and average model-call latency.
+type EvaluationLatencyMetrics struct {
+	DurationMS        int64   `json:"duration_ms"`
+	AvgMsPerSample    float64 `json:"avg_ms_per_sample"`
+	ModelCalls        int64   `json:"model_calls"`
+	AvgMsPerModelCall float64 `json:"avg_ms_per_model_call"`
 }
 
 // RetrievalMetrics contains metrics for retrieval evaluation
@@ -180,7 +220,20 @@ type EvaluationOptions struct {
 	ChatModelID      string                    `json:"chat_id"`
 	RerankModelID    string                    `json:"rerank_id"`
 	EmbeddingModelID string                    `json:"embedding_id"`
+	Chunking         *EvaluationChunkingConfig `json:"chunking,omitempty"`
 	Params           *EvaluationParamsOverride `json:"params,omitempty"`
+}
+
+// EvaluationChunkingConfig is the chunking configuration accepted by the
+// evaluation API. Strategy "passthrough" preserves one chunk per corpus
+// passage; empty/nil disables the override entirely for backward
+// compatibility.
+type EvaluationChunkingConfig struct {
+	Strategy     string   `json:"strategy"`
+	ChunkSize    int      `json:"chunk_size"`
+	ChunkOverlap int      `json:"chunk_overlap"`
+	TokenLimit   int      `json:"token_limit,omitempty"`
+	Languages    []string `json:"languages,omitempty"`
 }
 
 // EvaluationParamsOverride holds optional evaluation parameters. Pointer

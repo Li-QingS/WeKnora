@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/cli/internal/cmdutil"
@@ -83,6 +84,7 @@ func Run(ctx context.Context, cfg *RunnerConfig, cli EvalClient, opts RunOptions
 		ChatModelID:      chatID,
 		EmbeddingModelID: embeddingID,
 		RerankModelID:    rerankID,
+		Chunking:         buildChunking(cfg.Chunking),
 		Params:           buildParams(cfg),
 	}
 	detail, err := cli.StartEvaluation(ctx, request)
@@ -100,6 +102,19 @@ func Run(ctx context.Context, cfg *RunnerConfig, cli EvalClient, opts RunOptions
 	}
 
 	return finishRun(ctx, cli, result, opts)
+}
+
+func buildChunking(cfg RunnerChunking) *sdk.EvaluationChunking {
+	if !cfg.Enabled() {
+		return nil
+	}
+	return &sdk.EvaluationChunking{
+		Strategy:     strings.ToLower(strings.TrimSpace(cfg.Strategy)),
+		ChunkSize:    cfg.ChunkSize,
+		ChunkOverlap: cfg.ChunkOverlap,
+		TokenLimit:   cfg.TokenLimit,
+		Languages:    cfg.Languages,
+	}
 }
 
 func finishRun(

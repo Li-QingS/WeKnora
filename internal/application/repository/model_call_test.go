@@ -114,6 +114,25 @@ func TestModelCallRepositoryListAndTenantIsolation(t *testing.T) {
 	assert.Equal(t, int64(1), total)
 }
 
+func TestModelCallRepositoryListByRequestGroup(t *testing.T) {
+	db := setupModelCallTestDB(t)
+	repo := NewModelCallRepository(db)
+	runRecord := newTestModelCall("run-1", 1, "m1", string(types.ModelCallStatusSuccess), nil)
+	runRecord.RequestGroupID = "evaluation_run_1"
+	otherRecord := newTestModelCall("run-2", 1, "m1", string(types.ModelCallStatusSuccess), nil)
+	otherRecord.RequestGroupID = "evaluation_run_2"
+	require.NoError(t, repo.Create(modelCallCtx(1), runRecord))
+	require.NoError(t, repo.Create(modelCallCtx(1), otherRecord))
+
+	records, total, err := repo.List(modelCallCtx(1), 1, &types.ModelCallFilter{
+		RequestGroupID: "evaluation_run_1",
+	}, &types.Pagination{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, records, 1)
+	assert.Equal(t, "run-1", records[0].ID)
+}
+
 func TestModelCallRepositorySummary(t *testing.T) {
 	db := setupModelCallTestDB(t)
 	repo := NewModelCallRepository(db)

@@ -92,6 +92,23 @@ func (r *evaluationRunRepository) List(
 	return runs, total, nil
 }
 
+func (r *evaluationRunRepository) DeleteByID(
+	ctx context.Context,
+	tenantID uint64,
+	id string,
+) error {
+	res := r.db.WithContext(ctx).
+		Where("id = ? AND tenant_id = ?", id, tenantID).
+		Delete(&types.EvaluationRun{})
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return ErrEvaluationRunNotFound
+	}
+	return nil
+}
+
 func (r *evaluationRunRepository) UpdateProgress(
 	ctx context.Context,
 	id string,

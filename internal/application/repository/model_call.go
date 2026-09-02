@@ -99,6 +99,7 @@ func (r *modelCallRepository) Summary(
 		item.TotalTokens += int64(record.TotalTokens)
 		item.CacheReadTokens += int64(record.CacheReadTokens)
 		item.CacheWriteTokens += int64(record.CacheWriteTokens)
+		item.CacheMissTokens += int64(record.CacheMissTokens)
 		if record.EstimatedCostUSD != nil {
 			if item.EstimatedCostUSD == nil {
 				value := 0.0
@@ -126,6 +127,9 @@ func applyModelCallFilters(query *gorm.DB, filter *types.ModelCallFilter) *gorm.
 	}
 	if filter.Status != "" {
 		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.RequestGroupID != "" {
+		query = query.Where("request_group_id = ?", filter.RequestGroupID)
 	}
 	if filter.From != nil {
 		query = query.Where("created_at >= ?", *filter.From)

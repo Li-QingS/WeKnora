@@ -85,6 +85,49 @@ func (d *DatasetService) GetDatasetByID(ctx context.Context, datasetID string) (
 	return loaded, nil
 }
 
+// ListAvailableDatasets scans the dataset root and returns metadata for every
+// valid dataset directory. The built-in "samples" directory is exposed as the
+// "default" alias used by the evaluation API.
+func (d *DatasetService) ListAvailableDatasets(ctx context.Context) ([]*types.EvaluationDatasetMeta, error) {
+	logger.Info(ctx, "Listing available evaluation datasets")
+	entries, err := os.ReadDir(datasetRoot)
+	if err != nil {
+		return nil, fmt.Errorf("dataset: read %s: %w", datasetRoot, err)
+	}
+
+	seen := make(map[string]bool)
+	datasets := make([]*types.EvaluationDatasetMeta, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() || entry.Name() == "" {
+			continue
+		}
+		id := entry.Name()
+		if !validDatasetID(id) {
+			continue
+		}
+		if id == "samples" {
+			id = "default"
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		loaded, loadErr := loadDatasetDir(filepath.Join(datasetRoot, entry.Name()))
+		if loadErr != nil {
+			logger.Debugf(ctx, "Skipping invalid dataset directory %s: %v", entry.Name(), loadErr)
+			continue
+		}
+		datasets = append(datasets, &types.EvaluationDatasetMeta{
+			ID:          id,
+			SHA256:      loaded.SHA256,
+			SampleCount: loaded.SampleCount,
+		})
+	}
+	sort.Slice(datasets, func(i, j int) bool { return datasets[i].ID < datasets[j].ID })
+	logger.Infof(ctx, "Found %d evaluation datasets", len(datasets))
+	return datasets, nil
+}
+
 func validDatasetID(id string) bool {
 	if id == "" {
 		return true
@@ -280,6 +323,7 @@ func (d *dataset) Iterate() []*types.QAPair {
 		})
 	}
 
+	sort.Slice(pairs, func(i, j int) bool { return pairs[i].QID < pairs[j].QID })
 	return pairs
 }
 

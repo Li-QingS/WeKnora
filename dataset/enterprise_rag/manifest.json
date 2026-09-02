@@ -1,0 +1,1000 @@
+{
+  "source": "EnterpriseRAG-Bench",
+  "source_url": "https://github.com/onyx-dot-app/EnterpriseRAG-Bench",
+  "questions": [
+    {
+      "id": "qst_0005",
+      "question_type": "basic",
+      "source_types": [
+        "gmail"
+      ],
+      "question": "What failover sequence and recovery targets did MedThink specify for handling an EU region outage, including any limits on how long traffic can shift to the US?",
+      "gold_answer": "MedThink's preferred failover hierarchy is EU primary → EU warm standby → US emergency failover. They set a target RPO of 15 minutes for active datasets and an RTO target of 30 minutes for critical APIs, and allow shifting to the US only during declared, pre-approved emergency windows capped at 4 hours.",
+      "docs": [
+        {
+          "id": "dsid_8e838ab6a98f4cbcb672d41f210ff89c",
+          "source": "gmail",
+          "path": "gmail/rafael_mendes/20280503-region-fallback-priority-ops-inventory.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0010",
+      "question_type": "basic",
+      "source_types": [
+        "github"
+      ],
+      "question": "How does the new alerting approach group model-serving requests by the stages they pass through to reduce noisy alerts and speed up root cause analysis?",
+      "gold_answer": "It adds a lightweight token_stage_cohort service that computes a deterministic \"cohort key\" for each invocation from stage-level signals (e.g., token counts per stage, KV-cache hit patterns, decode batch size) and keeps short-lived aggregates per cohort. An alert route-matrix generator then uses those cohort rollups to build a route × stage alert matrix that attributes SLO violations to the most likely pipeline stages and biases escalation to the top-k responsible stages, reducing per-route alert noise and speeding RCA.",
+      "docs": [
+        {
+          "id": "dsid_c1a6a71323c04c1ba5445aadea340362",
+          "source": "github",
+          "path": "github/pr-867001-introduce-token-stage-cohorting-and-route-matrix-alerting.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0015",
+      "question_type": "basic",
+      "source_types": [
+        "hubspot"
+      ],
+      "question": "What was the high-percentile latency concern reported after a smoke test of about 50 concurrent streaming chat sessions for Satellite Grove?",
+      "gold_answer": "After a smoke test with roughly 50 concurrent short streaming chats, they observed a p99 latency of about 250ms (with ~120ms median), which raised concern about tail-latency spikes.",
+      "docs": [
+        {
+          "id": "dsid_e75bbf328fe349d2bb39e29b1ed7c9d5",
+          "source": "hubspot",
+          "path": "hubspot/company-satellite-grove-assist.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0073",
+      "question_type": "basic",
+      "source_types": [
+        "gmail"
+      ],
+      "question": "What was the credit memo amount AWS Marketplace issued after fixing the March billing issue with duplicated reserved usage and reversing incorrectly applied VAT for a US buyer?",
+      "gold_answer": "AWS Marketplace issued a credit memo for $23,412.50 (CM-1152-2026) after removing the duplicated reserved usage records and reversing the incorrectly applied VAT.",
+      "docs": [
+        {
+          "id": "dsid_a1e0ff30870f40d7b692aa27bbedc194",
+          "source": "gmail",
+          "path": "gmail/marissa_cole/20260503-marketplace-payout-vat-dispute.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0083",
+      "question_type": "basic",
+      "source_types": [
+        "jira"
+      ],
+      "question": "What was the root cause of the customer invoice overcharge where an organization-wide promotional credit was mistakenly redistributed as charges across multiple child accounts during a billing reconciliation run in a hybrid dedicated plus hosted setup?",
+      "gold_answer": "The reconciliation run (run-45) merged dedicated and hosted-overflow metering events, but for a subset of hosted-overflow records the gateway tag/owner_id was not propagated, leaving owner_id empty. The allocation-service then hit a faulty fallback path that treated the org-level promo credit as distributable (using the wrong owner/allocation group) and reallocated it into positive charges across child subaccounts instead of applying it to the paying parent account.",
+      "docs": [
+        {
+          "id": "dsid_3b9483f629fd423d81ac49a7efff89c9",
+          "source": "jira",
+          "path": "jira/internal-support/SUP-208471-harmonized-rate-plan-credit-alloc-reconciliation-discrepancy.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0085",
+      "question_type": "basic",
+      "source_types": [
+        "google_drive"
+      ],
+      "question": "What are the three request quality and cost tiers proposed in the lightweight interaction tiering model for user facing features?",
+      "gold_answer": "The model proposes three tiers: micro (cheapest), standard (baseline/default), and deep (quality-first).",
+      "docs": [
+        {
+          "id": "dsid_2271ae6c393d409093b11b5a6d5b96ed",
+          "source": "google_drive",
+          "path": "google_drive/users/niko-rogers-interaction-tiering-idea-scrapbook.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0092",
+      "question_type": "basic",
+      "source_types": [
+        "slack"
+      ],
+      "question": "In the engineering rollout chat about deprecating v2, what was the start time and region for the initial canary deployment and what traffic ramp was planned?",
+      "gold_answer": "The initial canary deployment started in us-west-2 at 2026-03-23T02:00Z, with traffic planned to ramp from 1% to 5% over 3 hours.",
+      "docs": [
+        {
+          "id": "dsid_fa7dba9ea186436281a953c7b376bf11",
+          "source": "slack",
+          "path": "slack/1769005123-api-v2-deprecation-rollout-checkin.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0104",
+      "question_type": "basic",
+      "source_types": [
+        "confluence"
+      ],
+      "question": "What is the standard amount of time a new hire buddy is expected to spend per day during the first two weeks when a long-term contractor is converted to a full-time employee?",
+      "gold_answer": "The buddy is expected to spend about 1 hour per day with the new hire during the first two weeks.",
+      "docs": [
+        {
+          "id": "dsid_005f7a937cad4b3cbb30d9d93199e22a",
+          "source": "confluence",
+          "path": "confluence/people-ops/embedded-contractor-conversion-playbook-2026.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0121",
+      "question_type": "basic",
+      "source_types": [
+        "fireflies"
+      ],
+      "question": "When is the 48-hour throughput and latency benchmark on the dedicated pool due to be completed?",
+      "gold_answer": "The 48-hour throughput and latency benchmark on the dedicated pool is due by 2026-12-08 (with results/readout shared by that date).",
+      "docs": [
+        {
+          "id": "dsid_e3ae91c7f83f46e492209ffec2c7f2b8",
+          "source": "fireflies",
+          "path": "fireflies/customer-success/2026-11-27-mariner-health-ops-bridge-cost-uptime-standup.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0123",
+      "question_type": "basic",
+      "source_types": [
+        "hubspot"
+      ],
+      "question": "What was the requested proof-of-concept duration for the inbound content marketing company evaluating batching and caching for high-volume templated SEO article generation?",
+      "gold_answer": "They requested a 72-hour proof of concept (a 72h run) to evaluate batching and caching performance and cost.",
+      "docs": [
+        {
+          "id": "dsid_b65f12db881f41dc9239fe044f4754dd",
+          "source": "hubspot",
+          "path": "hubspot/company-fluentforge-mediaworks.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0124",
+      "question_type": "basic",
+      "source_types": [
+        "hubspot"
+      ],
+      "question": "What percent reduction in monthly model or token spend was the founder of a small developer tools micro-SaaS aiming for while keeping acceptable latency?",
+      "gold_answer": "The founder was targeting a 30-50% reduction in monthly model/token spend while maintaining acceptable latency.",
+      "docs": [
+        {
+          "id": "dsid_30a16502953a4088b59266c8990d52d6",
+          "source": "hubspot",
+          "path": "hubspot/company-picoprompt-labs.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0126",
+      "question_type": "basic",
+      "source_types": [
+        "fireflies"
+      ],
+      "question": "For IronCrest Bioinformatics evaluating Redwood, what was the typical time to get from signup to receiving the first response token using the self-serve quickstart flow?",
+      "gold_answer": "Using Redwood's self-serve (PLG) quickstart flow, the typical time to reach the first response token is about 15-30 minutes.",
+      "docs": [
+        {
+          "id": "dsid_912991a0a2ce4000a55b1f67bda8c3a3",
+          "source": "fireflies",
+          "path": "fireflies/partners/2025-05-09-ironcrest-bio-quickstart-hosting-pathway-discovery.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0129",
+      "question_type": "basic",
+      "source_types": [
+        "jira"
+      ],
+      "question": "What was the temporary workaround used to prevent the Windows 11 imaging task sequence from failing when a provisioning script breaks under certain non-default locale collation settings?",
+      "gold_answer": "Imaging Ops added a wrapper in the SCCM task sequence that forcibly sets locale variables (LANG and LC_COLLATE) to en_US.UTF-8 before running the provisioning step, preventing the setup_local_policies.sh failure under legacy collation settings.",
+      "docs": [
+        {
+          "id": "dsid_6952f7cb64304c04bdf72562e5154724",
+          "source": "jira",
+          "path": "jira/internal-support/INT-338201-locale-collation-encoding-error-stalls-provisioning.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0136",
+      "question_type": "basic",
+      "source_types": [
+        "jira"
+      ],
+      "question": "What was the temporary mitigation applied for the enterprise customer whose SSE streaming chat responses were getting truncated after an edge proxy handoff in us-east?",
+      "gold_answer": "Support temporarily mitigated the issue by pinning Slateware's traffic to a more stable edge pool to avoid edge proxy handoffs (connection affinity flips), which eliminated the truncation failures during streaming.",
+      "docs": [
+        {
+          "id": "dsid_9619c1f3ff3c4626a2bd029e907e1f76",
+          "source": "jira",
+          "path": "jira/internal-support/SUP-721406-connection-affinity-flip-induces-half-closed-stream-with-partial-json-choice.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0167",
+      "question_type": "basic",
+      "source_types": [
+        "github"
+      ],
+      "question": "What configuration option was added to let repositories explicitly allow Docker-in-Docker during the staged rollout of the new GitHub composite action CI setup?",
+      "gold_answer": "They added an opt-out configuration flag in `.github/ci-config.yml` called `allow_dind` (set it to `true`) to explicitly allow Docker-in-Docker during the rollout.",
+      "docs": [
+        {
+          "id": "dsid_9d1624818a004c53b3b7020412275cc0",
+          "source": "github",
+          "path": "github/pr-49512-modernize-ci-build-plugins-migrate-bash-to-composite.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0175",
+      "question_type": "basic",
+      "source_types": [
+        "linear"
+      ],
+      "question": "What keyboard-only interaction model is required for the compact dashboard widgets, including how focus enters the card and how users move and activate controls inside it?",
+      "gold_answer": "The mini-widgets must be fully operable by keyboard: users Tab to move focus onto the widget card, then use the arrow keys to navigate between the widget's internal controls, and press Enter or Space to activate the primary action.",
+      "docs": [
+        {
+          "id": "dsid_f02a338c2dd546b3b025b5d5d429ad4e",
+          "source": "linear",
+          "path": "linear/design/DES-195271-console-mini-widgets-keynav-rtl-contrast-audit.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0184",
+      "question_type": "semantic",
+      "source_types": [
+        "gmail"
+      ],
+      "question": "When is the 60 to 90 minute technical deep dive scheduled with the healthcare client about running model serving inside their own isolated network, and what is the time window in Pacific time?",
+      "gold_answer": "The 60-90 minute technical deep dive (private hosting architecture review) is scheduled for Tuesday, October 24, 2028, from 10:00 to 11:15 AM Pacific Time.",
+      "docs": [
+        {
+          "id": "dsid_74cd6ebda84547e2a534f8f6d1b49739",
+          "source": "gmail",
+          "path": "gmail/soojin_lee/20281020-architecture-review-booking-next-steps-cytohealth.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0189",
+      "question_type": "semantic",
+      "source_types": [
+        "github"
+      ],
+      "question": "In our offline installer release process, how do we expose per-component supply chain provenance so an operator can see which build system and commit produced each piece and optionally enforce that missing or bad attestations fail the index step?",
+      "gold_answer": "We extend the private-installer release index (schema v2) to include an per-artifact `origins` block that records the source repo, build system/job ID, build commit, and optional SBOM/cosign references, populated by the indexer querying an origin-mapper service and cross-referencing artifact digests to upstream build metadata. The indexer verifies cosign signatures on the origin blobs and records the verification result, and operators can make failed/missing origin verification a hard failure by running the indexer with `--enforce-origin-verification`.",
+      "docs": [
+        {
+          "id": "dsid_5d54f5f89bbc48a5b06b8dead39729b3",
+          "source": "github",
+          "path": "github/pr-87103-aggregate-artifact-origins-release-index-private-installer.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0197",
+      "question_type": "semantic",
+      "source_types": [
+        "confluence"
+      ],
+      "question": "During a major production outage, what is the prescribed sequence of actions for the first 60 to 90 minutes, from opening the live coordination call through confirming the service is healthy again?",
+      "gold_answer": "Follow the Ten-Step Restoration Sprint: (1) Acknowledge the alert and open the incident bridge (Zoom/Meet), create the incident channel (#inc-xxxx), and post initial status (0-5m). (2) Perform quick impact triage by confirming affected services via dashboards and classifying scope (regional/global; data/control plane), then produce a short impact statement (5-10m). (3) Stabilize traffic using graduated controls (rate limits, routing/traffic division to healthy regions) and, where available, fall back to lighter model variants or reduced sequence-length modes (10-20m). (4) Execute a hotfix window by applying validated, small, reversible mitigations from the relevant service runbooks and document all changes in the incident channel (20-40m). (5) Validate restoration by running synthetic probes and verifying p95/p99 latency and error rates are returning to baseline, capturing pre/post metrics and commands used (30-50m).",
+      "docs": [
+        {
+          "id": "dsid_25b0de9bfa854d3c9acfa961555c9d45",
+          "source": "confluence",
+          "path": "confluence/security-and-compliance/ten-step-restoration-sprint-and-shadow-mentoring-handbook-2025.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0201",
+      "question_type": "semantic",
+      "source_types": [
+        "slack"
+      ],
+      "question": "During the Feb 14, 2026 APAC region outage where vector generation requests intermittently failed with server errors due to a cache layer getting overloaded by a scheduled warmup task, what immediate mitigation did the oncall apply to reduce the cascading retries across downstream nodes?",
+      "gold_answer": "The oncall flipped the model-cache service circuit breaker to a \"soft\" state (via the admin API) to reduce fanout to downstream slow nodes and cut the retry storm.",
+      "docs": [
+        {
+          "id": "dsid_96e315a4f8644c8bbafe05c2e0c0b775",
+          "source": "slack",
+          "path": "slack/eng-oncall/4071000000.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0236",
+      "question_type": "semantic",
+      "source_types": [
+        "confluence"
+      ],
+      "question": "In our multi-customer GPU inference environment, what is the CI-based tool that spins up a sandbox network setup and drives synthetic traffic patterns to catch regressions in outbound routing and bandwidth fairness before infrastructure changes land?",
+      "gold_answer": "It's the Tenant Egress Isolation CI Simulator-an automated CI test harness (with a controller plus a Python traffic generator and sandbox Terraform checks) that spins up ephemeral network modules and drives synthetic tenant traffic to validate egress routing, tenant isolation, and cross-tenant bandwidth fairness before changes reach production.",
+      "docs": [
+        {
+          "id": "dsid_189583d1a5ed4513a4d709a037098a24",
+          "source": "confluence",
+          "path": "confluence/eng-infra/cloud-accounts-and-networking/tenant-egress-isolation-ci-simulator.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0243",
+      "question_type": "semantic",
+      "source_types": [
+        "github"
+      ],
+      "question": "In our GPU inference service that merges many request streams, what change was made to cut worst case latency spikes that happened when the attention memory footprint abruptly shifted during batch formation, while keeping median latency nearly flat?",
+      "gold_answer": "They added a KV-cache-aware scheduling hint and a jitter-resilient continuous-batching policy: requests are tagged with estimated KV working-set deltas so the scheduler avoids coalescing batches that trigger abrupt KV footprint jumps/evictions, and the batcher uses small adaptive hold windows to align jittery streams without materially increasing median latency.",
+      "docs": [
+        {
+          "id": "dsid_908e8464927742829dcdfe0c6165299b",
+          "source": "github",
+          "path": "github/pr-763210-dynamic-perchannel-requant-kv-jitter-batcher.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0245",
+      "question_type": "semantic",
+      "source_types": [
+        "hubspot"
+      ],
+      "question": "Which fintech support-chat prospect dropped us after their lawyers rejected non-audited compliance proof and chose a rival that could deliver a private install with formal audit paperwork?",
+      "gold_answer": "It was Onyx Cloud Labs. Their legal/security team rejected self-attestation and required audited SOC2/ISO evidence, so they moved forward with CompetitorX, which offered an on-prem/private deployment plus formal audit paperwork.",
+      "docs": [
+        {
+          "id": "dsid_d79518c427654533a01173792f51f986",
+          "source": "hubspot",
+          "path": "hubspot/company-onyx-cloud-labs.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0250",
+      "question_type": "semantic",
+      "source_types": [
+        "gmail"
+      ],
+      "question": "In the dedicated GPU hosting plan with prepaid overage credits, what is the default time window after a demand spike during which any additional spikes are treated as part of the same billable overage event?",
+      "gold_answer": "The default cooldown window is 15 minutes after a surge event; any additional spikes within that 15-minute window are treated as part of the same billable overage (surge) event.",
+      "docs": [
+        {
+          "id": "dsid_3b1c14ab4cc647369b783b7abdfc32f3",
+          "source": "gmail",
+          "path": "gmail/markus_klein/20260812-burst-commit-alloc-efficiency-tiered-surge-pricing.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0256",
+      "question_type": "semantic",
+      "source_types": [
+        "jira"
+      ],
+      "question": "During a gradual rollout of a new large model on a single production tenant in early March 2026, some sessions that were supposed to stay on a customer-specified version briefly got routed to a cheaper compressed build, causing worse answers without any server error spike. What was the immediate mitigation applied at the request routing layer to prevent this kind of misrouting when a version lock is provided?",
+      "gold_answer": "They hotfixed the edge route-resolver to enforce the pin header at selection time: if a request includes an explicit model pin, the router rejects any fallback variant whose tokenizer family doesn't match the pinned model (preventing routing to the quantized q4 build when the pin is provided).",
+      "docs": [
+        {
+          "id": "dsid_df40f9a66b914f29839322d19f8922bb",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-425001-cohort-signal-loss-during-synced-canary-flip.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0266",
+      "question_type": "semantic",
+      "source_types": [
+        "github"
+      ],
+      "question": "In the recent SDK update that made streaming behave the same across Python, TypeScript, and Go, what is the new wrapper layer called that handles automatic reauthentication on expired credentials and lets a client resume a dropped stream using a small persisted checkpoint token?",
+      "gold_answer": "It's called the **SessionDecorator**-a lightweight wrapper around the stream iterator that automatically refreshes expired credentials and supports resuming via a small persisted **ResumeToken v2** checkpoint token.",
+      "docs": [
+        {
+          "id": "dsid_415b72b7d40a405e87b9671946e894d8",
+          "source": "github",
+          "path": "github/pr-998901-introduce-session-decorator-to-simplify-cross-sdk-streams-and-credential-rotation-shim.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0280",
+      "question_type": "semantic",
+      "source_types": [
+        "google_drive"
+      ],
+      "question": "In the rollout plan for the internal service that only hands out application secrets to verified runtime hosts using short lived machine health proofs and hardware backed key unwrapping, what is the default hot and cold retention period for the tamper resistant audit trail?",
+      "gold_answer": "The tamper-evident audit trail defaults to 90 days of hot retention and 1 year of cold retention.",
+      "docs": [
+        {
+          "id": "dsid_6713194be8d54a0f8de8f8d89347ecf6",
+          "source": "google_drive",
+          "path": "google_drive/shared_drives/attestation-aware-secrets-gateway-roadmap-v0-1-draft.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0300",
+      "question_type": "semantic",
+      "source_types": [
+        "google_drive"
+      ],
+      "question": "In the internal routing performance memo that compared a nearby low latency serving path versus a centralized high throughput batching path and a split strategy that starts local then hands off when the response gets longer, which approach had the cheapest cost per 1k tokens for medium length requests and what was that cost?",
+      "gold_answer": "For the mid-thread (medium-length) workload, the centralized batching approach (core-tiling-multiplex) had the lowest cost at $0.062 per 1k tokens.",
+      "docs": [
+        {
+          "id": "dsid_2ffb84ee56464340885a9e484cfc6f5d",
+          "source": "google_drive",
+          "path": "google_drive/shared_drives/dispatch-surface-playback-memo-may15-2026.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0303",
+      "question_type": "intra_document_reasoning",
+      "source_types": [
+        "linear"
+      ],
+      "question": "Which teams are required to sign off on the dedicated capacity intake rubric, and what two follow-up dependencies were noted for the next steps work?",
+      "gold_answer": "The rubric requires sign-off from Solutions, Sales, Runtime Eng, Capacity Ops, and Security. The two follow-up dependencies noted were ENG-23145 (autoscaler safety checks) and PM-904321 (Console intake form redesign).",
+      "docs": [
+        {
+          "id": "dsid_cf4696a68a924cc3aaf48ba4a2c1fab1",
+          "source": "linear",
+          "path": "linear/product-management/PM-663210-dedicated-capacity-intake-heuristic-and-stakeholder-synthesis.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0313",
+      "question_type": "intra_document_reasoning",
+      "source_types": [
+        "linear"
+      ],
+      "question": "What metric name did Billing request to replace emit_latency_ms with in the aggregated rollups for billing reconciliation, and what is the default request sampling rate for full emission span tracing?",
+      "gold_answer": "Billing requested renaming the metric from \"emit_latency_ms\" to \"token_emit_latency_ms\", and the default sampling rate for full emission-span tracing is 0.5% of requests.",
+      "docs": [
+        {
+          "id": "dsid_e9f22ba025e34bb6b7b8c61d26a38a19",
+          "source": "linear",
+          "path": "linear/engineering/ENG-72654-incremental-token-latency-allocation-tracing.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0322",
+      "question_type": "intra_document_reasoning",
+      "source_types": [
+        "github"
+      ],
+      "question": "What config flag controls enabling the bandwidth-aware fanout planner for TP allreduce on heterogeneous link clusters, and what other new components are called out in the release notes as helping reduce comm and compute stalls?",
+      "gold_answer": "The bandwidth-aware fanout planner is controlled by the config flag \"runtime.bandwidth_fanout.enabled\". The release notes also call out KV-shard coalescing, a small stride-optimized memcpy kernel, and stream mapping as new components that help reduce communication/computation stalls.",
+      "docs": [
+        {
+          "id": "dsid_bab6aba4c06e41e9ae46b9355f644a7a",
+          "source": "github",
+          "path": "github/redwood/pr-128765-hetero-bandwidth-allreduce-kv-coalesce.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0325",
+      "question_type": "intra_document_reasoning",
+      "source_types": [
+        "slack"
+      ],
+      "question": "For the Q2 milestone scope they locked in the chat, which items were pushed to v1 versus kept in the MVP?",
+      "gold_answer": "They deferred to v1 the full-tenant SSO, tenant routing/per-tenant network plumbing, cross-tenant dedupe, and non-email 2FA options (SMS/TOTP). They kept in the MVP the embedding cache work, quantization, and a minimal email-only 2FA flow.",
+      "docs": [
+        {
+          "id": "dsid_bbce440e846642f3983104c786157597",
+          "source": "slack",
+          "path": "slack/product/1718209999-milestone-cut-gateway-consensus.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0336",
+      "question_type": "intra_document_reasoning",
+      "source_types": [
+        "gmail"
+      ],
+      "question": "For the CartPilot Redwood trial POC, when is the kickoff sync scheduled and what peak request rate did they say they expect during bursts?",
+      "gold_answer": "The kickoff sync is scheduled for Wednesday 7/31 at 10:00 AM PT, and they expect peak bursts of up to about 120 requests per second.",
+      "docs": [
+        {
+          "id": "dsid_b89d7b362a2c480993502fb443c144c9",
+          "source": "gmail",
+          "path": "gmail/ben_carter/20270729-cartpilot-poc-sync-and-slot.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0338",
+      "question_type": "intra_document_reasoning",
+      "source_types": [
+        "confluence"
+      ],
+      "question": "Who owns the mixed-priority cgroup and soft-quota playbook for multi-tenant inference, and what is the best email or Slack channel to contact for rollout coordination?",
+      "gold_answer": "The playbook is owned by infra-scheduling@redwood.com (eng-infra), with serving-runtime@redwood.com as the secondary owner. For rollout coordination, contact infra-scheduling@redwood.com or open a ticket in the #infra-scheduling Slack channel.",
+      "docs": [
+        {
+          "id": "dsid_06682ba9559b4b2192ffe6dee7a7abba",
+          "source": "confluence",
+          "path": "confluence/architecture-and-standards/infra-standards/mixed-priority-cgroup-and-soft-quota-playbook-2026.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0355",
+      "question_type": "project_related",
+      "source_types": [
+        "confluence",
+        "gmail",
+        "slack"
+      ],
+      "question": "What is the approved wording to use when a prospect demands EU-only data residency and no non-EU support access for the Hosted API, and who do we need to escalate to if they want that as a contractual commitment?",
+      "gold_answer": "Approved wording (Hosted API, EU region): \"Redwood Inference supports regional processing for Hosted API workloads. When a customer selects an EU region, Customer Content (request prompts and model outputs) is processed in that region. Access to Customer Content is restricted to authorized personnel on a need-to-know basis and is logged. Certain limited operational metadata (e.g., account and billing information, service health telemetry) may be processed or stored outside the selected region as part of operating and securing the service.\" For the 'no non-EU support access' demand, use: \"Where access is required for support or incident response, it is authorized, time-bound, and logged. Access may be performed by Redwood personnel located outside the EU, depending on the nature of the request and support coverage.\" If they want EU-only residency / EU-only support access as a contractual commitment, escalate to Legal (Michael Grant) and Security/GRC (Olga Petrov / Daniel Carter).",
+      "docs": [
+        {
+          "id": "dsid_6fc6a90cd2d044e5add05493803e64d1",
+          "source": "gmail",
+          "path": "gmail/olga_petrov/20260204-eu-data-residency-questions-and-approved-wording.json"
+        },
+        {
+          "id": "dsid_b8f2f50607a0406f9733f2e9ba4281c8",
+          "source": "slack",
+          "path": "slack/sales/1769014420-eu-data-residency-objection-handling.json"
+        },
+        {
+          "id": "dsid_08585f025bd74d50bafd23843caae7bb",
+          "source": "confluence",
+          "path": "confluence/sales-enablement/security-faq/security-faq-what-we-do-and-dont-say.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0360",
+      "question_type": "project_related",
+      "source_types": [
+        "linear",
+        "slack"
+      ],
+      "question": "Customers behind strict corporate proxies are seeing 4xx failures when the quickstart templates add telemetry tags. What tagging approach and opt-out setting should we use, and how will that affect TTFS and activation KPI measurement?",
+      "gold_answer": "Use proxy-safe, best-effort tagging: don't send new custom X-* telemetry headers by default; if you need attribution, prefer appending a fixed template name+version token to User-Agent (no install_id), and only send the full template tag header when explicitly enabled. Provide an explicit opt-out/disable switch (REDWOOD_TEMPLATE_TELEMETRY_ENABLED=false as the default; when false, send no telemetry headers). With tagging disabled (or if headers are blocked), API-derived per-install TTFS and activation (first_success tied to install_id) will be missing/partial; Analytics can only rely on CLI init/doctor funnel signals and cannot reliably compute TTFS/activation from first tagged request → first_success for those installs.",
+      "docs": [
+        {
+          "id": "dsid_3e7cf5be42d84f2880858c726b65998f",
+          "source": "linear",
+          "path": "linear/product-management/PM-912-quickstart-templates-kpi-and-telemetry-requirements.json"
+        },
+        {
+          "id": "dsid_73b60918db2b467c88af9d57635402a4",
+          "source": "slack",
+          "path": "slack/incidents/1740864420-template-telemetry-header-causing-4xx-in-some-proxies.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0361",
+      "question_type": "project_related",
+      "source_types": [
+        "confluence",
+        "jira"
+      ],
+      "question": "How do we decide whether a streaming disconnect is a client abort or a platform-caused failure for SLO and error budget accounting, and how should that be reflected in the SLA availability calculation and the customer-facing Support response?",
+      "gold_answer": "Classify streaming disconnects using gateway stream-close telemetry correlated with upstream attempt signals. Mark as client_abort only when (1) the gateway observed a client-initiated close/reset before the normal terminal event and (2) there is no coincident upstream failure (no upstream 5xx/timeout/reset) in a short correlation window (default ~2s). If there is an upstream/gateway failure signal (upstream_reset, gateway_error/idle_timeout/proxy_write_error, router_failover_midstream, etc.) or attribution is ambiguous, treat it as platform-caused and count it as a bad stream.\nFor SLO/error budget: client_abort/customer-cancelled disconnects are excluded from streaming reliability (and excluded from streaming/latency SLIs per the exclusion rules); platform-caused disconnects count against streaming reliability, and for streaming \"availability/success\" the request is only good if the stream is established and ends cleanly (terminal event + clean close).\nFor SLA availability (calendar month): an Eligible streaming request is failed if it ends in a Redwood-attributable stream error/disconnect (or 5xx); client aborts/customer timeouts and customer/network issues supported by edge telemetry are excluded. If disconnect cause is ambiguous, default to counting it as Redwood-attributable for SLA/SLO accounting.\nSupport response should mirror this: explain that not all streaming failures appear as a single 5xx because the stream is already open; we use terminal stream events to classify completed vs error vs client-abort. Ask for x-redwood-request-id(s), timestamps (UTC), region, client error text, whether a terminal SSE event was received, and client/proxy timeout settings; share mitigations like increasing proxy idle/read timeouts, bounding max_tokens/response duration, and ensuring the client continuously reads the stream.",
+      "docs": [
+        {
+          "id": "dsid_b885123ef2c04d508ee071328a4e5aa7",
+          "source": "confluence",
+          "path": "confluence/architecture-and-standards/observability-standards/sli-specification-api-gateway-and-routing.json"
+        },
+        {
+          "id": "dsid_d9d0ca701cc54d58adae135f69cc83d7",
+          "source": "confluence",
+          "path": "confluence/policies-and-process/vendor-management/tiered-slo-to-sla-mapping-hosted-and-dedicated.json"
+        },
+        {
+          "id": "dsid_19b05c958acb478a90cab25257366a29",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-28501-hosted-streaming-disconnects-and-slo-accounting-questions.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0367",
+      "question_type": "project_related",
+      "source_types": [
+        "confluence",
+        "gmail",
+        "jira",
+        "slack"
+      ],
+      "question": "For an enterprise ticket like SUP-1842 where streaming disconnects happen in us-east, when should we escalate from a Support bridge to a formal incident and post a status page update, and what customer update cadence and credits wording should we use?",
+      "gold_answer": "Escalate from a Support bridge to a formal incident (#incidents) and open a status page incident when the issue is no longer customer-specific triage and meets any of the comms-alignment criteria (default to YES unless explicitly waived by IC + CS leadership). Concretely, move to #incidents and treat as incident-worthy if any are true: (1) suspected or confirmed multi-customer impact (2+ customers with the same symptom in the same region/model within 60 minutes, or duplicate inbound volume), (2) evidence or strong suspicion of regional/service degradation even if only one enterprise customer reported first, based on telemetry such as streaming resets/truncations >= 0.5% of streams for 10 minutes, 5xx >= 2% for 10 minutes, timeouts >= 1% for 10 minutes, or p95 latency >= 2x baseline for 15 minutes (do not wait for perfect metrics if impact is credible), (3) mitigation requires coordinated on-call action that changes production behavior (rollback, traffic shift, routing/fallback changes, capacity moves) or you need cross-team coordination/comms roles, (4) tier-critical impact (Enterprise/Dedicated/Private) where SLA or credits concerns are expected, or (5) impact persists beyond ~15 minutes without quick mitigation (if uncertain, open a cautious \"Investigating\" status incident). Once in #incidents, keep the Support bridge only for customer-specific coordination and mirror the IC as the source of truth.\n\nCustomer update cadence for Enterprise: if P0, first response within 15 minutes (24/7) and meaningful updates every 30 minutes while active; if P1, first response within 30 minutes (24/7) and updates every 60 minutes while actively mitigating. For any declared incident, mirror the IC/comms lead cadence and always include the next update time; if you are blocked or there is no change, still send a time-based \"still investigating/monitoring, next update at X\" update.\n\nCredits wording: do not promise credits and do not write \"SLA breach\" or any admission of fault. Use: \"If youd like to request service credits per your agreement, were reviewing the incident timeline and observed impact against the applicable SLA terms and can confirm any applicable credits once the impact assessment is finalized.\" For SUP-1842 specifically, if pressed, commit only to a decision timeline: \"Well get back to you by Wednesday, Feb 11.\" Any goodwill credit or credit amount requires CS leadership approval (Jasmine Liu; coordinate via Rachel Kim) and route any contract interpretation to Legal (Sofia Mendes); default credit application is a billing adjustment on the next invoice unless CS leadership explicitly approves mid-cycle.",
+      "docs": [
+        {
+          "id": "dsid_b632b2d6f86f41c6820e52ae56549a35",
+          "source": "confluence",
+          "path": "confluence/customer-success-and-support/escalation-playbook/severity-matrix-and-escalation-triggers.json"
+        },
+        {
+          "id": "dsid_2dc6ac1e1db14588913165002c062961",
+          "source": "confluence",
+          "path": "confluence/customer-success-and-support/escalation-playbook/sla-policy-by-customer-tier.json"
+        },
+        {
+          "id": "dsid_0b129c86cc6240b088a137d6634eef25",
+          "source": "confluence",
+          "path": "confluence/customer-success-and-support/escalation-playbook/slack-bridge-and-incident-channel-conventions.json"
+        },
+        {
+          "id": "dsid_85ade33e53334639be778b9c7aabe637",
+          "source": "confluence",
+          "path": "confluence/oncall-and-incident-response/status-page-and-comms/customer-incident-comms-alignment.json"
+        },
+        {
+          "id": "dsid_d11b935761d94f10911c358aba04f4df",
+          "source": "gmail",
+          "path": "gmail/jasmine_liu/20260207-exec-escalation-acme-streaming-timeouts.json"
+        },
+        {
+          "id": "dsid_8d97d64cfcb14cd3b13589b86b0a0c02",
+          "source": "confluence",
+          "path": "confluence/customer-success-and-support/escalation-playbook/executive-escalation-protocol.json"
+        },
+        {
+          "id": "dsid_51895b7e9f2942898291b66b72886b15",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-1860-credits-request-after-sla-breach.json"
+        },
+        {
+          "id": "dsid_b64f6bb160574675932dacbbfaa59965",
+          "source": "slack",
+          "path": "slack/eng-oncall/1772045120.json"
+        },
+        {
+          "id": "dsid_d8f3577836ad4646a404dc043115156d",
+          "source": "gmail",
+          "path": "gmail/avery_johnson/20260211-customer-credit-request-guidance.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0371",
+      "question_type": "project_related",
+      "source_types": [
+        "confluence",
+        "slack"
+      ],
+      "question": "Which streaming event names and tool-call fields are we standardizing on for SDK examples and golden fixtures, and how should we map OpenAI-compat tool-call deltas into that model?",
+      "gold_answer": "Standardize SDK examples + golden fixtures on these canonical stream event types: response.started, message.delta, tool_call.delta, tool_call.final (aka tool_call.done), message.final, response.completed (aka response.done), plus response.error and response.interrupted. Tool-call fields are: tool_call_id (the stable identifier used everywhere, including tool results), name, arguments_delta (streamed fragment as a string), and arguments (complete JSON string on final); tool results are role=\"tool\" with tool_call_id and content (typically JSON-stringified). For OpenAI-compat streaming, map each delta.tool_calls[i] to this model by setting tool_call_id = tool_calls[i].id, name = tool_calls[i].function.name, and arguments_delta = the new appended substring of tool_calls[i].function.arguments (or the provided fragment); accumulate per tool_call_id, and when the tool call is complete (finish_reason tool_calls / end of tool-call emission / message final), emit tool_call.final with arguments = the full accumulated arguments string, then JSON-parse/validate only at that point.",
+      "docs": [
+        {
+          "id": "dsid_3ad691e18be849d897506f5276c24a75",
+          "source": "confluence",
+          "path": "confluence/eng-developer-experience/api-examples/streaming-event-model-conventions.json"
+        },
+        {
+          "id": "dsid_fc356e32e9a64c3199be174cb91432eb",
+          "source": "confluence",
+          "path": "confluence/architecture-and-standards/api-standards/adr-streaming-tool-call-payload-shape.json"
+        },
+        {
+          "id": "dsid_a1d8ea3adc68431ebd90cc40a51b5627",
+          "source": "slack",
+          "path": "slack/eng-platform/1739173199-openai-compat-tool-call-differences.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0379",
+      "question_type": "project_related",
+      "source_types": [
+        "confluence",
+        "jira",
+        "linear"
+      ],
+      "question": "If a Private upgrade fails on a Postgres migration lock timeout, what is the recommended operator path to recover or roll back, and what upgrade artifacts and audit events need to be captured for change management?",
+      "gold_answer": "On a Private upgrade Postgres migration lock-timeout failure: stop further progression (do not proceed to data-plane changes), capture the current installer upgrade status/last state and generate a support bundle including the upgrade trace. Attempt forward recovery first by clearing the lock contention: scale down the control-plane deployments to release stale connections, inspect Postgres for long-running transactions and lock waits (pg_stat_activity / lock info), terminate the blocking backend PID (pg_terminate_backend) and retry the migration step (re-run the migration job / re-apply the control-plane stage per the installer plan). If the lock cannot be cleared quickly, migrations appear partially applied, or the plan indicates the migration stage is not safely reversible, move to rollback decisioning: use the installer rollback path only if the upgrade state shows a valid rollback entry point and migrations are marked reversible; otherwise treat rollback as blocked/unsafe and perform restore-from-backup as the authoritative fallback (scale down workloads to prevent writes, restore the control-plane DB from the pre-upgrade snapshot/dump associated with the plan, reconcile Helm releases/values/manifests to the pre-upgrade pinned versions recorded in the upgrade state, then bring CP up and verify CP health before restoring DP and running postchecks).\n\nFor change management, retain and attach: the generated upgrade plan (plan.json / upgrade-plan.json, plus a short summary), the precheck report (precheck-report.json, including any WARN acknowledgements), the backup report/manifest (backup-report.json plus backup_id and snapshot IDs or dump URIs, verification result, and encryption/KMS mode), the upgrade execution outputs (upgrade-report.json and/or persisted state dir/UpgradeRun record with upgrade_id, from/to versions, plan hash, backup_id, per-stage step results) and relevant Kubernetes job logs (migration job) plus installer logs; include rollback-report.json if rollback is attempted, or restore logs/evidence if a backup restore is performed; and the generated support bundle with upgrade trace (redacted of secrets). Audit events minimum set: upgrade_started, prechecks_passed or prechecks_failed, backup_completed or backup_failed, upgrade_completed or upgrade_failed, and if used rollback_invoked plus rollback_completed or rollback_failed (and restore_started/restore_completed for environments requiring restore audit), with environment/cluster id, operator identity, from_version/to_version, upgrade_plan_id/plan hash, upgrade_id/execution id, backup_id, and timestamps.",
+      "docs": [
+        {
+          "id": "dsid_5094ef74d2e249919de1aa6db7c5d0e7",
+          "source": "confluence",
+          "path": "confluence/eng-sre/runbooks/private-upgrade-runbook.json"
+        },
+        {
+          "id": "dsid_cd46e89bb40a4dd7b243aabf43c98086",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-18421-private-upgrade-failed-during-db-migration.json"
+        },
+        {
+          "id": "dsid_7f6bde5cefa543a7b1943ffaf5a8a9f1",
+          "source": "confluence",
+          "path": "confluence/policies-and-process/change-management/private-release-gating-and-change-management.json"
+        },
+        {
+          "id": "dsid_acd1d77ed9044f3691d06a9ccc6bf417",
+          "source": "confluence",
+          "path": "confluence/eng-sre/runbooks/upgrade-related-alerts-and-mitigation.json"
+        },
+        {
+          "id": "dsid_c5848fca4e1c4cc48164aa3e53e5741b",
+          "source": "confluence",
+          "path": "confluence/eng-private-deployments/upgrade-and-rollback/backup-and-restore-strategy-private.json"
+        },
+        {
+          "id": "dsid_d64cf51ff0db444c92d57cf1a5981b75",
+          "source": "confluence",
+          "path": "confluence/eng-private-deployments/upgrade-and-rollback/private-upgrade-and-rollback-overview.json"
+        },
+        {
+          "id": "dsid_a2d5f7ee89c14d4ab02e82aa94f22c18",
+          "source": "linear",
+          "path": "linear/engineering/ENG-4844-rollback-state-machine-and-idempotency.json"
+        },
+        {
+          "id": "dsid_57a712a7419d4e84bccfcf08c8c010a5",
+          "source": "confluence",
+          "path": "confluence/eng-private-deployments/upgrade-and-rollback/rollback-semantics-and-hooks.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0388",
+      "question_type": "constrained",
+      "source_types": [
+        "jira"
+      ],
+      "question": "In the March 2026 incident where long-lived Server-Sent Events (SSE) streams would reconnect after a brief upstream TCP reset and then show duplicated heartbeat frames while sometimes never emitting the terminal end-of-stream event, what was the root cause and what server-side fix resolved it?",
+      "gold_answer": "Root cause was a race in the sse-gateway after a brief upstream TCP RST where the in-flight terminal end event flush interleaved with scheduled keepalive/heartbeat work, causing duplicated heartbeat frames and sometimes dropping the terminal end-of-stream event when the client resumed quickly. The fix was PR 2147 on the server to make terminal end emission atomic and strictly ordered ahead of heartbeats, and to delay/guard resume acceptance with a short grace window so a reconnect can't interleave with the final flush.",
+      "docs": [
+        {
+          "id": "dsid_8c15ff526e00491e9ccbde5ef4a4458c",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-1000007-sse-keepalive-suppression-and-duplicate-heartbeat-resume.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0391",
+      "question_type": "constrained",
+      "source_types": [
+        "google_drive"
+      ],
+      "question": "In the hosted API incident in late April 2026 where streaming requests started returning 502/504 and non-streaming requests also saw a sharp tail-latency increase, what was the underlying trigger (involving an edge keepalive/connection-TTL change) and what immediate mitigations were used to restore service?",
+      "gold_answer": "It was triggered by an edge configuration change that cut upstream connection keepalive/TTL from 90s to 10s, increasing connection churn and exposing a streaming-proxy TCP write-stall bug that caused 502/504 on streaming and sharp tail-latency for non-streaming. Service was restored by rolling restarting the streaming-proxy fleet to clear stuck buffers, rolling back the edge TTL/keepalive setting to 90s, and applying temporary traffic shaping (soft concurrency limits and rejecting new sessions on overloaded proxies).",
+      "docs": [
+        {
+          "id": "dsid_0b0595a6d39247ada6238d8311b587f8",
+          "source": "google_drive",
+          "path": "google_drive/shared_drives/engineering/developer-experience/streaming-write-stall-ttl-regression-postmortem-2026-04-25.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0394",
+      "question_type": "constrained",
+      "source_types": [
+        "confluence"
+      ],
+      "question": "For Incident Bot v2, when responders use break-glass during a Sev0/Sev1 incident to view tenant-scoped config diffs or run privileged telemetry queries, which audit events must be emitted and how long are those audit events retained (SIEM vs immutable archive)? Also, what baseline vs break-glass permission scopes does the bot use for these reads?",
+      "gold_answer": "When break-glass is used in a Sev0/Sev1 incident, the bot must emit audit events for the break-glass session (incident_bot.break_glass.activate and incident_bot.break_glass.deactivate when it expires/is revoked) and for each privileged read: incident_bot.config_diff.read for tenant-scoped config diff reads and incident_bot.telemetry.query for privileged tenant-scoped telemetry queries (with break_glass=true and a break_glass_session_id on calls made under break-glass). These audit events are retained 400 days in the searchable SIEM and 7 years in an immutable/WORM archive. For permissions, baseline reads use config.read:diff_redacted and telemetry.read:diagnostics_templates; break-glass uses config.read:diff_expanded_redacted for expanded redacted config diffs and telemetry.read:tenant_scoped for tenant-scoped telemetry templates.",
+      "docs": [
+        {
+          "id": "dsid_9a5968363fce4f79af38d7702465a121",
+          "source": "confluence",
+          "path": "confluence/architecture-and-standards/decision-records/adr-013-incident-bot-data-sources-and-permissions.json"
+        },
+        {
+          "id": "dsid_7c08ef109c804c0bb165184b7d78b18c",
+          "source": "confluence",
+          "path": "confluence/security-and-compliance/audit-logging/incident-bot-access-audit.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0408",
+      "question_type": "constrained",
+      "source_types": [
+        "confluence"
+      ],
+      "question": "After the Feb 22, 2026 SEV-2 where Console rollout actions caused a rollback loop, which HTTP status code was wrongly treated as retryable, what server-side idempotency change was added for rollback requests, and (per the Dedicated staged rollouts audit-log spec) which service must emit the canonical audit events and what identifiers are used to de-duplicate retries?",
+      "gold_answer": "It wrongly retried HTTP 409 Conflict. The fix was to require a server-side Idempotency-Key for rollback requests so retries return the same result. Per the Dedicated staged rollouts audit-log spec, the dedicated-pool-rollouts-service must emit the canonical audit events, and retries are de-duplicated using the idempotency_key (with event_id used by the audit pipeline as the unique dedupe/primary key).",
+      "docs": [
+        {
+          "id": "dsid_e190b0de0d27466fa91bfc18b0815311",
+          "source": "confluence",
+          "path": "confluence/oncall-and-incident-response/postmortems/2026-02-22-sev2-console-deploy-rollout-ui-bug.json"
+        },
+        {
+          "id": "dsid_53035d2eb5024effac3aafd3e6ca6e70",
+          "source": "confluence",
+          "path": "confluence/security-and-compliance/audit-logging/audit-events-for-dedicated-rollout-actions.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0414",
+      "question_type": "conflicting_info",
+      "source_types": [
+        "gmail",
+        "jira"
+      ],
+      "question": "INC-9821: was the degraded GPU node an OOM or intermittent driver/kernel launch stalls?",
+      "gold_answer": "After deeper node telemetry review (2026-09-01), Redwood concluded the degraded GPU instance was primarily experiencing intermittent driver/kernel launch stalls (not a sustained GPU OOM). Earlier triage/postmortem language had speculated about an OOM or generic kernel failure/degraded kernel behavior, but this was later corrected.",
+      "docs": [
+        {
+          "id": "dsid_5611f05242ae4e6b9ae68d3c3e91bd54",
+          "source": "gmail",
+          "path": "gmail/stephanie_nguyen/20260828-crucible-inference-sitrep.json"
+        },
+        {
+          "id": "dsid_0c1f1c83e8d44d2fa3a9f6c7b2d7b9f1",
+          "source": "jira",
+          "path": "jira/internal-support/INT-9821-crucible-inference-latency-spike-and-5xx-inc-9821.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0422",
+      "question_type": "conflicting_info",
+      "source_types": [
+        "confluence",
+        "linear"
+      ],
+      "question": "How do audit log exports access records older than the retention cutoff (super-admin override vs legal hold)?",
+      "gold_answer": "Exports cannot pull records older than the tenant retention cutoff. The older \"super-admin retention override\" is deprecated; now any retrieval beyond retention requires an explicit Legal Hold using a legal_hold_id (only for tenants with Legal Hold enabled), and use of the legal_hold_id is logged to the immutable audit stream with a ticket reference.",
+      "docs": [
+        {
+          "id": "dsid_9cde32cd0645459b80ec513df27d1eb6",
+          "source": "linear",
+          "path": "linear/business-ops/ENG-78123-audit-retention-filtered-dump-with-role-aware-access.json"
+        },
+        {
+          "id": "dsid_8733ed2132dc4232b2797c1d9a167cb9",
+          "source": "confluence",
+          "path": "confluence/security-and-compliance/audit-logging/audit-log-export-role-aware-filtered-dump-2026.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0432",
+      "question_type": "completeness",
+      "source_types": [
+        "confluence",
+        "gmail",
+        "jira",
+        "slack"
+      ],
+      "question": "Which intake channel has the most reports of \"token accounting discrepancy\"?",
+      "gold_answer": "Jira (customer-support SUP tickets) has the most \"token accounting discrepancy\" reports among the provided cases.",
+      "docs": [
+        {
+          "id": "dsid_a592f24d2f3b4c21ba507b20c832d069",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-2841-token-accounting-discrepancy-between-streaming-usage-and-invoice-export.json"
+        },
+        {
+          "id": "dsid_5e87f57f0e424a3a9e79a3032d63eab8",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-2917-token-accounting-discrepancy-embeddings-usage-higher-than-client-side-tokenization.json"
+        },
+        {
+          "id": "dsid_a45bf5a85c7948dda06a42fc9f8b3ae3",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-3009-token-accounting-discrepancy-when-using-cached-prefix-and-tool-calls.json"
+        },
+        {
+          "id": "dsid_34f267b98745435b8d95e883b29ded9d",
+          "source": "slack",
+          "path": "slack/support/1723849205.json"
+        },
+        {
+          "id": "dsid_c4afa7bd5d104c43b45567c799121342",
+          "source": "gmail",
+          "path": "gmail/kimberly_park/20250211-token-accounting-discrepancy-feb-invoice-vs-usage.json"
+        },
+        {
+          "id": "dsid_91abfa2001d747b3b570e8abce00ef4d",
+          "source": "confluence",
+          "path": "confluence/customer-success-and-support/support-process/token-accounting-discrepancy-intake-and-triage.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0446",
+      "question_type": "completeness",
+      "source_types": [
+        "confluence",
+        "fireflies",
+        "gmail",
+        "jira",
+        "slack"
+      ],
+      "question": "Has any customer other than Kestrel Labs reported timeouts specifically when using the JSON-schema structured output feature on the hosted API?",
+      "gold_answer": "Yes. Northwind Analytics also reported intermittent timeouts when using JSON-schema structured output on the hosted API (us-east region, atlas-13b-instruct model). The root cause for both Kestrel Labs and Northwind Analytics was long-tail latency in the constrained decoding path, especially with large or complex schemas containing combinators (anyOf/oneOf).",
+      "docs": [
+        {
+          "id": "dsid_312eed72d5d04d27a52717f94e178341",
+          "source": "jira",
+          "path": "jira/customer-support/SUP-4812-kestrel-structured-output-json-schema-timeouts.json"
+        },
+        {
+          "id": "dsid_f97baf7b89b34cac9fc2fcde251a2502",
+          "source": "slack",
+          "path": "slack/support/1743002167-structured-output-json-schema-timeouts.json"
+        },
+        {
+          "id": "dsid_1507ad6f9a704d4fb86aac359ade8c51",
+          "source": "gmail",
+          "path": "gmail/monica_patel/20250729-northwind-analytics-structured-output-json-schema-timeouts.json"
+        },
+        {
+          "id": "dsid_e0cd6ae5755943258ef361ce2a1c0295",
+          "source": "fireflies",
+          "path": "fireflies/customer-success/2025-08-01-northwind-analytics-poc-check-in.json"
+        },
+        {
+          "id": "dsid_b43656ed184842b8a54c51137141d3cc",
+          "source": "confluence",
+          "path": "confluence/customer-success-and-support/known-issues-and-workarounds/structured-output-json-schema-timeouts.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0456",
+      "question_type": "miscellaneous",
+      "source_types": [
+        "slack"
+      ],
+      "question": "What time was the fantasy football mock draft scheduled for, and which time zone was it in?",
+      "gold_answer": "The mock draft was scheduled for 8:00 PM Pacific Standard Time (PST).",
+      "docs": [
+        {
+          "id": "dsid_2d829921c58b4e3db4be1d60fc0ceb3a",
+          "source": "slack",
+          "path": "slack/sports/1777777777-fantasy-draft-prep-2026.json"
+        }
+      ]
+    },
+    {
+      "id": "qst_0464",
+      "question_type": "miscellaneous",
+      "source_types": [
+        "slack"
+      ],
+      "question": "For the casual soccer game being organized on Friday after work, what was the agreed maximum number of players?",
+      "gold_answer": "They agreed to cap the Friday pickup soccer game at 14 players.",
+      "docs": [
+        {
+          "id": "dsid_199789e68ef741bca44a24d535ed6c00",
+          "source": "slack",
+          "path": "slack/sports/1729456000-office-soccer-and-march-bracket.json"
+        }
+      ]
+    }
+  ]
+}

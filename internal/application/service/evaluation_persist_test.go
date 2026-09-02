@@ -50,6 +50,21 @@ func (f *fakeEvaluationRunRepository) GetByID(
 	return cloneEvaluationRun(run), nil
 }
 
+func (f *fakeEvaluationRunRepository) DeleteByID(
+	_ context.Context,
+	tenantID uint64,
+	id string,
+) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	run, ok := f.runs[id]
+	if !ok || run.TenantID != tenantID {
+		return repository.ErrEvaluationRunNotFound
+	}
+	delete(f.runs, id)
+	return nil
+}
+
 func (f *fakeEvaluationRunRepository) List(
 	_ context.Context,
 	tenantID uint64,
@@ -306,6 +321,38 @@ func (d *evalDatasetService) GetDatasetByID(context.Context, string) (*types.Eva
 	return d.dataset, d.err
 }
 
+func (d *evalDatasetService) ListAvailableDatasets(context.Context) ([]*types.EvaluationDatasetMeta, error) {
+	if d.dataset == nil {
+		return nil, nil
+	}
+	return []*types.EvaluationDatasetMeta{
+		{ID: "dataset-1", SHA256: d.dataset.SHA256, SampleCount: d.dataset.SampleCount},
+	}, nil
+}
+
+type evalModelCallRepository struct {
+	interfaces.ModelCallRepository
+	records []*types.ModelCallRecord
+}
+
+func (r *evalModelCallRepository) List(
+	_ context.Context,
+	tenantID uint64,
+	filter *types.ModelCallFilter,
+	_ *types.Pagination,
+) ([]*types.ModelCallRecord, int64, error) {
+	if filter == nil || filter.RequestGroupID == "" {
+		return nil, 0, nil
+	}
+	records := make([]*types.ModelCallRecord, 0, len(r.records))
+	for _, record := range r.records {
+		if record.TenantID == tenantID {
+			records = append(records, record)
+		}
+	}
+	return records, int64(len(records)), nil
+}
+
 func newEvaluationPersistTestService(
 	repo interfaces.EvaluationRunRepository,
 	models *evalModelService,
@@ -548,6 +595,57 @@ func TestEvaluationPersist_SuccessCompletesWithMetrics(t *testing.T) {
 	assert.Equal(t, "dataset-hash", snapshot.Dataset.SHA256)
 }
 
+func TestEvaluationPersist_RunIncludesCostAndLatencyMetrics(t *testing.T) {
+	repo := newFakeEvaluationRunRepository()
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), successEvalDataset())
+	cost := 0.25
+	svc.modelCalls = &evalModelCallRepository{records: []*types.ModelCallRecord{
+		{
+			TenantID:         1,
+			ModelID:          "embed-1",
+			RequestGroupID:   "run-group",
+			Status:           string(types.ModelCallStatusSuccess),
+			DurationMS:       120,
+			PromptTokens:     100,
+			CompletionTokens: 50,
+			TotalTokens:      150,
+			EstimatedCostUSD: &cost,
+		},
+		{
+			TenantID:         1,
+			ModelID:          "chat-1",
+			RequestGroupID:   "run-group",
+			Status:           string(types.ModelCallStatusSuccess),
+			DurationMS:       800,
+			PromptTokens:     20,
+			CompletionTokens: 10,
+			TotalTokens:      30,
+			EstimatedCostUSD: &cost,
+		},
+	}}
+	ctx := evaluationPersistCtx(1)
+
+	detail, err := svc.Evaluation(ctx, &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+	})
+	require.NoError(t, err)
+
+	run := waitForEvaluationRunStatus(t, repo, 1, detail.Task.ID, types.EvaluationStatueSuccess)
+	var metric types.MetricResult
+	require.NoError(t, json.Unmarshal(run.Metric, &metric))
+	require.NotNil(t, metric.CostMetrics)
+	assert.Equal(t, int64(2), metric.CostMetrics.ModelCalls)
+	assert.Equal(t, int64(180), metric.CostMetrics.TotalTokens)
+	require.NotNil(t, metric.CostMetrics.EstimatedCostUSD)
+	assert.InDelta(t, 0.5, *metric.CostMetrics.EstimatedCostUSD, 0.0001)
+	require.NotNil(t, metric.LatencyMetrics)
+	assert.GreaterOrEqual(t, metric.LatencyMetrics.DurationMS, int64(0))
+	assert.Equal(t, int64(2), metric.LatencyMetrics.ModelCalls)
+}
+
 func TestEvaluationPersist_DatasetErrorFailsBeforeCreate(t *testing.T) {
 	repo := newFakeEvaluationRunRepository()
 	svc := newEvaluationPersistTestService(repo, evalPersistModels(), failingEvalDataset())
@@ -603,6 +701,72 @@ func TestEvaluationPersist_ParamsOverrideAffectsConfigHash(t *testing.T) {
 	assert.Equal(t, 0.9, params.SummaryConfig.Temperature)
 }
 
+func TestEvaluationPersist_ChunkingOverrideAffectsSnapshotAndHash(t *testing.T) {
+	repo := newFakeEvaluationRunRepository()
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), successEvalDataset(), failingEvalKnowledge())
+	ctx := evaluationPersistCtx(1)
+
+	base := &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+	}
+	chunked := &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+		Chunking: &types.EvaluationChunkingConfig{
+			Strategy:     "recursive",
+			ChunkSize:    1024,
+			ChunkOverlap: 80,
+		},
+	}
+
+	baseDetail, err := svc.Evaluation(ctx, base)
+	require.NoError(t, err)
+	chunkedDetail, err := svc.Evaluation(ctx, chunked)
+	require.NoError(t, err)
+
+	baseRun, err := repo.GetByID(ctx, 1, baseDetail.Task.ID)
+	require.NoError(t, err)
+	chunkedRun, err := repo.GetByID(ctx, 1, chunkedDetail.Task.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, baseRun.ConfigHash, chunkedRun.ConfigHash)
+
+	var baseSnapshot types.EvaluationConfigSnapshot
+	require.NoError(t, json.Unmarshal(baseRun.ConfigSnapshot, &baseSnapshot))
+	require.Nil(t, baseSnapshot.Chunking)
+
+	var chunkedSnapshot types.EvaluationConfigSnapshot
+	require.NoError(t, json.Unmarshal(chunkedRun.ConfigSnapshot, &chunkedSnapshot))
+	require.NotNil(t, chunkedSnapshot.Chunking)
+	assert.Equal(t, "recursive", chunkedSnapshot.Chunking.Strategy)
+	assert.Equal(t, 1024, chunkedSnapshot.Chunking.ChunkSize)
+	assert.Equal(t, 80, chunkedSnapshot.Chunking.ChunkOverlap)
+}
+
+func TestEvaluationPersist_InvalidChunkingFailsBeforeRun(t *testing.T) {
+	repo := newFakeEvaluationRunRepository()
+	svc := newEvaluationPersistTestService(repo, evalPersistModels(), successEvalDataset(), failingEvalKnowledge())
+	ctx := evaluationPersistCtx(1)
+
+	_, err := svc.Evaluation(ctx, &types.EvaluationOptions{
+		DatasetID:       "dataset-1",
+		KnowledgeBaseID: "kb-1",
+		ChatModelID:     "chat-1",
+		RerankModelID:   "rerank-1",
+		Chunking:        &types.EvaluationChunkingConfig{Strategy: "unknown-strategy"},
+	})
+	require.ErrorIs(t, err, ErrInvalidEvaluationParams)
+
+	runs, total, err := repo.List(ctx, 1, nil, &types.Pagination{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.Empty(t, runs)
+	assert.Zero(t, total)
+}
+
 func TestEvaluationPersist_StartupScanMarksStaleRuns(t *testing.T) {
 	repo := newFakeEvaluationRunRepository()
 	ctx := evaluationPersistCtx(1)
@@ -653,6 +817,44 @@ func TestEvaluationPersist_EvaluationResultIsTenantScoped(t *testing.T) {
 	require.NotNil(t, detail.Task)
 	assert.Equal(t, "run-1", detail.Task.ID)
 	assert.Equal(t, types.EvaluationStatueSuccess, detail.Task.Status)
+}
+
+func TestEvaluationPersist_DeleteTerminalRun(t *testing.T) {
+	repo := newFakeEvaluationRunRepository()
+	svc := &EvaluationService{evaluationRunRepository: repo}
+	ctx := evaluationPersistCtx(1)
+	now := time.Now()
+	require.NoError(t, repo.Create(ctx, &types.EvaluationRun{
+		ID: "run-done", TenantID: 1, DatasetID: "ds", Status: types.EvaluationStatueSuccess,
+		StartTime: now, CreatedAt: now,
+	}))
+
+	require.NoError(t, svc.DeleteEvaluationRun(ctx, "run-done"))
+	_, err := repo.GetByID(ctx, 1, "run-done")
+	require.ErrorIs(t, err, repository.ErrEvaluationRunNotFound)
+
+	require.ErrorIs(t, svc.DeleteEvaluationRun(evaluationPersistCtx(2), "run-done"), ErrEvaluationTaskNotFound)
+}
+
+func TestEvaluationPersist_CannotDeleteActiveRun(t *testing.T) {
+	repo := newFakeEvaluationRunRepository()
+	svc := &EvaluationService{evaluationRunRepository: repo}
+	ctx := evaluationPersistCtx(1)
+	now := time.Now()
+	for _, status := range []types.EvaluationStatue{
+		types.EvaluationStatuePending,
+		types.EvaluationStatueRunning,
+	} {
+		id := "run-active"
+		require.NoError(t, repo.Create(ctx, &types.EvaluationRun{
+			ID: id, TenantID: 1, DatasetID: "ds", Status: status,
+			StartTime: now, CreatedAt: now,
+		}))
+		require.ErrorIs(t, svc.DeleteEvaluationRun(ctx, id), ErrEvaluationRunActive)
+		_, err := repo.GetByID(ctx, 1, id)
+		require.NoError(t, err)
+		require.NoError(t, repo.DeleteByID(ctx, 1, id))
+	}
 }
 
 func TestEvaluationPersist_ListEvaluationRuns(t *testing.T) {

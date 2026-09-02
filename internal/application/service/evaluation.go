@@ -42,6 +42,9 @@ var ErrEvaluationTaskNotFound = errors.New("evaluation task not found")
 // ErrInvalidEvaluationParams is returned when request parameter overrides are invalid.
 var ErrInvalidEvaluationParams = errors.New("invalid evaluation params")
 
+// ErrEvaluationRunActive is returned when deleting a run that is still running.
+var ErrEvaluationRunActive = errors.New("evaluation run is still active")
+
 // EvaluationService handles evaluation tasks for knowledge base and chat models
 type EvaluationService struct {
 	config               *config.Config                  // Application configuration
@@ -50,6 +53,7 @@ type EvaluationService struct {
 	knowledgeService     interfaces.KnowledgeService     // Service for knowledge operations
 	sessionService       interfaces.SessionService       // Service for chat sessions
 	modelService         interfaces.ModelService         // Service for model operations
+	modelCalls           interfaces.ModelCallRepository  // Model ledger for cost/duration rollup
 
 	evaluationRunRepository interfaces.EvaluationRunRepository // Persistent storage for evaluation runs
 }
@@ -61,6 +65,7 @@ func NewEvaluationService(
 	knowledgeService interfaces.KnowledgeService,
 	sessionService interfaces.SessionService,
 	modelService interfaces.ModelService,
+	modelCalls interfaces.ModelCallRepository,
 	evaluationRunRepository interfaces.EvaluationRunRepository,
 ) interfaces.EvaluationService {
 	return &EvaluationService{
@@ -70,6 +75,7 @@ func NewEvaluationService(
 		knowledgeService:        knowledgeService,
 		sessionService:          sessionService,
 		modelService:            modelService,
+		modelCalls:              modelCalls,
 		evaluationRunRepository: evaluationRunRepository,
 	}
 }
@@ -90,6 +96,27 @@ func (e *EvaluationService) EvaluationResult(ctx context.Context, taskID string)
 
 	logger.Info(ctx, "Evaluation result retrieved successfully")
 	return e.evaluationRunToDetail(run)
+}
+
+// ListAvailableDatasets returns datasets available in the deployment.
+func (e *EvaluationService) ListAvailableDatasets(ctx context.Context) ([]*types.EvaluationDatasetMeta, error) {
+	return e.dataset.ListAvailableDatasets(ctx)
+}
+
+// DeleteEvaluationRun deletes a terminal evaluation run for the caller's tenant.
+func (e *EvaluationService) DeleteEvaluationRun(ctx context.Context, taskID string) error {
+	tenantID := types.MustTenantIDFromContext(ctx)
+	run, err := e.evaluationRunRepository.GetByID(ctx, tenantID, taskID)
+	if err != nil {
+		if errors.Is(err, repository.ErrEvaluationRunNotFound) {
+			return ErrEvaluationTaskNotFound
+		}
+		return err
+	}
+	if run.Status == types.EvaluationStatuePending || run.Status == types.EvaluationStatueRunning {
+		return ErrEvaluationRunActive
+	}
+	return e.evaluationRunRepository.DeleteByID(ctx, tenantID, taskID)
 }
 
 func (e *EvaluationService) evaluationRunToDetail(run *types.EvaluationRun) (*types.EvaluationDetail, error) {
@@ -152,6 +179,14 @@ func (e *EvaluationService) Evaluation(ctx context.Context, opts *types.Evaluati
 	if err != nil {
 		logger.Errorf(ctx, "Failed to load dataset: %v", err)
 		return nil, err
+	}
+	var chunking *types.EvaluationChunkingConfig
+	if opts.Chunking != nil {
+		chunking, err = normalizeEvaluationChunking(opts.Chunking)
+		if err != nil {
+			logger.Errorf(ctx, "Failed to normalize chunking config: %v", err)
+			return nil, err
+		}
 	}
 
 	// Handle knowledge base creation if not provided
@@ -327,7 +362,8 @@ func (e *EvaluationService) Evaluation(ctx context.Context, opts *types.Evaluati
 			SHA256:      loadedDataset.SHA256,
 			SampleCount: loadedDataset.SampleCount,
 		},
-		Models: e.buildModelSnapshots(ctx, embeddingModelID, chatModelID, rerankModelID),
+		Models:   e.buildModelSnapshots(ctx, embeddingModelID, chatModelID, rerankModelID),
+		Chunking: evaluationChunkingSnapshot(chunking),
 		Version: types.VersionSignature{
 			AppVersion: buildinfo.Version,
 			GitCommit:  buildinfo.CommitID,
@@ -339,7 +375,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context, opts *types.Evaluati
 	if err != nil {
 		return nil, fmt.Errorf("evaluation: encode config snapshot: %w", err)
 	}
-	configHash, err := e.computeConfigHash(params, snapshot.Dataset, snapshot.Models)
+	configHash, err := e.computeConfigHash(params, snapshot.Dataset, snapshot.Models, snapshot.Chunking)
 	if err != nil {
 		return nil, fmt.Errorf("evaluation: compute config hash: %w", err)
 	}
@@ -392,7 +428,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context, opts *types.Evaluati
 		go e.runHeartbeat(heartbeatCtx, taskID)
 
 		// Execute actual evaluation
-		if err := e.EvalDataset(newCtx, detail, knowledgeBaseID, loadedDataset); err != nil {
+		if err := e.EvalDataset(newCtx, detail, knowledgeBaseID, loadedDataset, chunking); err != nil {
 			stopHeartbeat()
 			detail.Task.Status = types.EvaluationStatueFailed
 			detail.Task.ErrMsg = err.Error()
@@ -477,9 +513,12 @@ func (e *EvaluationService) EvalDataset(
 	detail *types.EvaluationDetail,
 	knowledgeBaseID string,
 	dataset *types.EvaluationDataset,
+	chunking *types.EvaluationChunkingConfig,
 ) error {
 	logger.Info(ctx, "Start evaluating dataset")
 	logger.Infof(ctx, "Task ID: %s, Dataset ID: %s", detail.Task.ID, detail.Task.DatasetID)
+	ctx = types.WithRequestGroupID(ctx, detail.Task.ID)
+	evaluationStartedAt := time.Now()
 
 	logger.Infof(ctx, "Dataset retrieved successfully with %d QA pairs", len(dataset.Pairs))
 
@@ -495,8 +534,10 @@ func (e *EvaluationService) EvalDataset(
 	}
 	logger.Infof(ctx, "Updated task total to %d QA pairs", len(dataset.Pairs))
 
-	// Extract and organize passages from dataset
-	passages := getPassageList(dataset.Pairs)
+	// Extract and organize passages from dataset. When chunking is pinned,
+	// each corpus document is split before ingestion so the evaluation honors
+	// the recorded chunking parameters.
+	passages := chunkEvaluationPassages(getPassageList(dataset.Pairs), chunking)
 	logger.Infof(ctx, "Creating knowledge from %d passages", len(passages))
 
 	// Create knowledge base from passages (sync: wait for indexing to complete before querying)
@@ -606,6 +647,15 @@ func (e *EvaluationService) EvalDataset(
 	}
 
 	metricResult := metricHook.MetricResult()
+	costMetrics, modelCallDurationMS := e.evaluationLedgerRollup(ctx, detail.Task.ID)
+	metricResult.CostMetrics = costMetrics
+	metricResult.LatencyMetrics = buildEvaluationLatencyMetrics(
+		evaluationStartedAt,
+		time.Now(),
+		len(dataset.Pairs),
+		costMetrics,
+		modelCallDurationMS,
+	)
 	metricJSON, err := json.Marshal(metricResult)
 	if err != nil {
 		return err
@@ -694,23 +744,26 @@ func (e *EvaluationService) buildModelSnapshots(
 }
 
 type configHashPayload struct {
-	Params  *types.ChatManage     `json:"params"`
-	Dataset types.DatasetSnapshot `json:"dataset"`
-	Models  []types.ModelSnapshot `json:"models"`
+	Params   *types.ChatManage       `json:"params"`
+	Dataset  types.DatasetSnapshot   `json:"dataset"`
+	Models   []types.ModelSnapshot   `json:"models"`
+	Chunking *types.ChunkingSnapshot `json:"chunking,omitempty"`
 }
 
 func (e *EvaluationService) computeConfigHash(
 	params *types.ChatManage,
 	dataset types.DatasetSnapshot,
 	models []types.ModelSnapshot,
+	chunking *types.ChunkingSnapshot,
 ) (string, error) {
 	if models == nil {
 		models = []types.ModelSnapshot{}
 	}
 	payload := configHashPayload{
-		Params:  params,
-		Dataset: dataset,
-		Models:  models,
+		Params:   params,
+		Dataset:  dataset,
+		Models:   models,
+		Chunking: chunking,
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {

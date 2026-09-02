@@ -12,6 +12,8 @@ import (
 type EvaluationService interface {
 	// Evaluation starts a new evaluation task
 	Evaluation(ctx context.Context, opts *types.EvaluationOptions) (*types.EvaluationDetail, error)
+	// ListAvailableDatasets returns datasets that can be selected for a run.
+	ListAvailableDatasets(ctx context.Context) ([]*types.EvaluationDatasetMeta, error)
 	// EvaluationResult retrieves evaluation result by task ID
 	EvaluationResult(ctx context.Context, taskID string) (*types.EvaluationDetail, error)
 	// ListEvaluationRuns lists tenant-scoped evaluation runs with pagination.
@@ -20,6 +22,8 @@ type EvaluationService interface {
 		status *types.EvaluationStatue,
 		p *types.Pagination,
 	) (*types.PageResult, error)
+	// DeleteEvaluationRun deletes a terminal evaluation run scoped to tenant.
+	DeleteEvaluationRun(ctx context.Context, taskID string) error
 }
 
 // EvaluationRunRepository defines persistent storage for evaluation runs.
@@ -28,6 +32,8 @@ type EvaluationRunRepository interface {
 	Create(ctx context.Context, run *types.EvaluationRun) error
 	// GetByID retrieves an evaluation run scoped to tenantID.
 	GetByID(ctx context.Context, tenantID uint64, id string) (*types.EvaluationRun, error)
+	// DeleteByID deletes an evaluation run scoped to tenantID.
+	DeleteByID(ctx context.Context, tenantID uint64, id string) error
 	// List returns tenant-scoped runs ordered by creation time descending.
 	List(
 		ctx context.Context,
@@ -77,4 +83,6 @@ type EvalHook interface {
 type DatasetService interface {
 	// GetDatasetByID loads, validates and hashes the named dataset.
 	GetDatasetByID(ctx context.Context, datasetID string) (*types.EvaluationDataset, error)
+	// ListAvailableDatasets returns all valid dataset directories as metadata.
+	ListAvailableDatasets(ctx context.Context) ([]*types.EvaluationDatasetMeta, error)
 }

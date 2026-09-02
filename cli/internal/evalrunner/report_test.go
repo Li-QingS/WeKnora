@@ -27,6 +27,7 @@ func TestBuildReport(t *testing.T) {
 		ConfigSnapshot: json.RawMessage(`{
 			"dataset":{"id":"demo","sha256":"hash123","sample_count":1},
 			"models":[{"id":"chat-1","name":"Chat","provider":"zhipu","type":"KnowledgeQA"}],
+			"chunking":{"strategy":"recursive","chunk_size":1024,"chunk_overlap":80},
 			"version":{"app_version":"0.7.2","git_commit":"abc"}
 		}`),
 	}
@@ -47,6 +48,11 @@ func TestBuildReport(t *testing.T) {
 	if report.Version["app_version"] != "0.7.2" {
 		t.Errorf("version=%v", report.Version)
 	}
+	if report.Chunking == nil ||
+		report.Chunking.Strategy != "recursive" ||
+		report.Chunking.ChunkSize != 1024 {
+		t.Errorf("chunking=%+v", report.Chunking)
+	}
 }
 
 func TestWriteReports(t *testing.T) {
@@ -59,7 +65,11 @@ func TestWriteReports(t *testing.T) {
 		Dataset:     DatasetReport{ID: "demo", SHA256: "hash123", SampleCount: 1},
 		Models:      []ModelReport{},
 		Params:      map[string]any{"embedding_top_k": float64(30)},
-		Metric:      map[string]any{"retrieval_metrics": map[string]any{"precision": float64(1)}},
+		Metric: map[string]any{
+			"retrieval_metrics": map[string]any{"precision": float64(1)},
+			"cost_metrics":      map[string]any{"estimated_cost_usd": 0.25},
+			"latency_metrics":   map[string]any{"duration_ms": float64(1000)},
+		},
 		Reproduce:   "make eval-baseline CONFIG=./evaluation/configs/default.yaml",
 		GeneratedAt: "2026-09-01T00:00:00Z",
 	}
@@ -88,6 +98,11 @@ func TestWriteReports(t *testing.T) {
 	}
 	md := string(mdData)
 	for _, want := range []string{"run-1", "abc123", "make eval-baseline", "success"} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown missing %q:\n%s", want, md)
+		}
+	}
+	for _, want := range []string{"cost metrics", "estimated_cost_usd", "latency metrics", "duration_ms"} {
 		if !strings.Contains(md, want) {
 			t.Errorf("markdown missing %q:\n%s", want, md)
 		}

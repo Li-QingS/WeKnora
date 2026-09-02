@@ -83,7 +83,9 @@ func RegisterEvaluationRoutes(r *gin.RouterGroup, handler *handler.EvaluationHan
 	{
 		evaluationRoutes.POST("", g.Admin(), handler.Evaluation)
 		evaluationRoutes.GET("", g.Viewer(), handler.GetEvaluationResult)
+		evaluationRoutes.GET("/datasets", g.Viewer(), handler.ListAvailableDatasets)
 		evaluationRoutes.GET("/runs", g.Viewer(), handler.GetEvaluationRuns)
+		evaluationRoutes.DELETE("/runs/:id", g.Admin(), handler.DeleteEvaluationRun)
 	}
 }
 

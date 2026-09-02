@@ -100,6 +100,23 @@ func TestEvaluationRun_CreateGetTenantIsolation(t *testing.T) {
 	assert.Nil(t, otherTenant)
 }
 
+func TestEvaluationRun_DeleteByIDTenantScoped(t *testing.T) {
+	db := setupEvaluationRunTestDB(t)
+	repo := NewEvaluationRunRepository(db)
+	ctx := evaluationRunCtx(1)
+	run := newTestEvaluationRun("run-del", 1, types.EvaluationStatueSuccess, time.Now())
+	createEvaluationRuns(t, repo, run)
+
+	require.ErrorIs(t, repo.DeleteByID(evaluationRunCtx(2), 2, "run-del"), ErrEvaluationRunNotFound)
+	_, err := repo.GetByID(ctx, 1, "run-del")
+	require.NoError(t, err)
+
+	require.NoError(t, repo.DeleteByID(ctx, 1, "run-del"))
+	_, err = repo.GetByID(ctx, 1, "run-del")
+	require.ErrorIs(t, err, ErrEvaluationRunNotFound)
+	require.ErrorIs(t, repo.DeleteByID(ctx, 1, "run-del"), ErrEvaluationRunNotFound)
+}
+
 func TestEvaluationRun_ListPagedAndStatusFiltered(t *testing.T) {
 	db := setupEvaluationRunTestDB(t)
 	repo := NewEvaluationRunRepository(db)

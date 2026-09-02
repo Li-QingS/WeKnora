@@ -28,6 +28,16 @@ func (f *fakeEvaluationService) Evaluation(_ context.Context, opts *types.Evalua
 	return f.detail, f.err
 }
 
+func (f *fakeEvaluationService) ListAvailableDatasets(context.Context) ([]*types.EvaluationDatasetMeta, error) {
+	return []*types.EvaluationDatasetMeta{
+		{ID: "default", SampleCount: 1},
+	}, nil
+}
+
+func (f *fakeEvaluationService) DeleteEvaluationRun(context.Context, string) error {
+	return f.err
+}
+
 func (f *fakeEvaluationService) EvaluationResult(context.Context, string) (*types.EvaluationDetail, error) {
 	return f.detail, f.err
 }
@@ -50,6 +60,8 @@ func newEvaluationHandlerTestRouter(svc *fakeEvaluationService) *gin.Engine {
 	})
 	h := NewEvaluationHandler(svc)
 	r.POST("/evaluation", h.Evaluation)
+	r.GET("/evaluation/datasets", h.ListAvailableDatasets)
+	r.DELETE("/evaluation/runs/:id", h.DeleteEvaluationRun)
 	return r
 }
 
@@ -62,6 +74,11 @@ func TestEvaluationHandler_MapsOptionsFromRequest(t *testing.T) {
 		"chat_id": "chat-1",
 		"embedding_id": "embed-1",
 		"rerank_id": "rerank-1",
+		"chunking": {
+			"strategy": "recursive",
+			"chunk_size": 1024,
+			"chunk_overlap": 80
+		},
 		"params": {
 			"embedding_top_k": 20,
 			"summary_config": {"temperature": 0.5}
@@ -77,6 +94,10 @@ func TestEvaluationHandler_MapsOptionsFromRequest(t *testing.T) {
 	assert.Equal(t, "demo", svc.opts.DatasetID)
 	assert.Equal(t, "chat-1", svc.opts.ChatModelID)
 	assert.Equal(t, "embed-1", svc.opts.EmbeddingModelID)
+	require.NotNil(t, svc.opts.Chunking)
+	assert.Equal(t, "recursive", svc.opts.Chunking.Strategy)
+	assert.Equal(t, 1024, svc.opts.Chunking.ChunkSize)
+	assert.Equal(t, 80, svc.opts.Chunking.ChunkOverlap)
 	require.NotNil(t, svc.opts.Params)
 	require.NotNil(t, svc.opts.Params.EmbeddingTopK)
 	assert.Equal(t, 20, *svc.opts.Params.EmbeddingTopK)
@@ -100,4 +121,33 @@ func TestEvaluationHandler_MapsDatasetErrorsToBadRequest(t *testing.T) {
 		router.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusBadRequest, w.Code, "sentinel: %v", sentinel)
 	}
+}
+
+func TestEvaluationHandler_ListsAvailableDatasets(t *testing.T) {
+	svc := &fakeEvaluationService{detail: &types.EvaluationDetail{}}
+	router := newEvaluationHandlerTestRouter(svc)
+	req := httptest.NewRequest(http.MethodGet, "/evaluation/datasets", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"default"`)
+	assert.Contains(t, w.Body.String(), `"sample_count":1`)
+}
+
+func TestEvaluationHandler_DeleteEvaluationRun(t *testing.T) {
+	svc := &fakeEvaluationService{detail: &types.EvaluationDetail{}}
+	router := newEvaluationHandlerTestRouter(svc)
+	req := httptest.NewRequest(http.MethodDelete, "/evaluation/runs/run-1", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), `"success":true`)
+
+	svc.err = service.ErrEvaluationRunActive
+	req = httptest.NewRequest(http.MethodDelete, "/evaluation/runs/run-1", nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

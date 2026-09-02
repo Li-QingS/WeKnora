@@ -349,8 +349,8 @@ dev-frontend:
 	./scripts/dev.sh frontend
 
 # WP2 reproducible baseline runner
-CONFIG ?= ./evaluation/configs/default.yaml
-BASELINE ?= ./evaluation/baselines/demo.yaml
+CONFIG ?= ./evaluation/configs/enterprise.yaml
+BASELINE ?= ./evaluation/baselines/enterprise_rag.yaml
 eval-baseline:
 	$(MAKE) -C cli build
 	./cli/bin/weknora eval run --config $(CONFIG) --wait --report-dir artifacts/evaluation

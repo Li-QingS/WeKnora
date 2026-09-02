@@ -10,22 +10,24 @@ import (
 
 // cachedEmbedder reuses embedding vectors for identical inputs.
 type cachedEmbedder struct {
-	inner    Embedder
-	cache    EmbeddingCache
-	tenantID uint64
-	pooler   EmbedderPooler
+	inner     Embedder
+	cache     EmbeddingCache
+	tenantID  uint64
+	pooler    EmbedderPooler
+	modelID   string
+	modelName string
 }
 
 func (c *cachedEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	key := c.keyFor(ctx, text)
 	if vector, ok, err := c.cache.Get(ctx, &key); err == nil && ok {
-		statsHits.Add(1)
+		recordCacheHit(c.modelID, c.modelName)
 		_ = c.cache.IncrementHit(ctx, &key)
 		return vector, nil
 	}
-	statsMisses.Add(1)
+	recordCacheMiss(c.modelID, c.modelName)
 	vector, err := c.inner.Embed(ctx, text)
-	statsProviderCalls.Add(1)
+	recordProviderCall(c.modelID, c.modelName)
 	if err == nil {
 		_ = c.cache.Set(ctx, &key, vector)
 	}
@@ -42,12 +44,12 @@ func (c *cachedEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 		key := c.keyFor(ctx, text)
 		keys[i] = key
 		if vector, ok, err := c.cache.Get(ctx, &key); err == nil && ok {
-			statsHits.Add(1)
+			recordCacheHit(c.modelID, c.modelName)
 			_ = c.cache.IncrementHit(ctx, &key)
 			results[i] = vector
 			continue
 		}
-		statsMisses.Add(1)
+		recordCacheMiss(c.modelID, c.modelName)
 		missingIndexes = append(missingIndexes, i)
 		missingTexts = append(missingTexts, text)
 	}
@@ -56,7 +58,7 @@ func (c *cachedEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 	}
 
 	vectors, err := c.inner.BatchEmbed(ctx, missingTexts)
-	statsProviderCalls.Add(1)
+	recordProviderCall(c.modelID, c.modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -97,5 +99,12 @@ func wrapEmbeddingCache(e Embedder, tenantID uint64, pooler EmbedderPooler) Embe
 	if cache == nil || e == nil {
 		return e
 	}
-	return &cachedEmbedder{inner: e, cache: cache, tenantID: tenantID, pooler: pooler}
+	return &cachedEmbedder{
+		inner:     e,
+		cache:     cache,
+		tenantID:  tenantID,
+		pooler:    pooler,
+		modelID:   e.GetModelID(),
+		modelName: e.GetModelName(),
+	}
 }

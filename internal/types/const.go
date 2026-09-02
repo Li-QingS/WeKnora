@@ -31,6 +31,10 @@ const (
 	// so that stateful sandbox backends (notably CubeSandbox) can route script
 	// execution to the persistent, per-session MicroVM instance.
 	SessionIDContextKey ContextKey = "SessionID"
+	// RequestGroupIDContextKey carries a logical request group (for example an
+	// evaluation run ID) so every model call in that group can be attributed
+	// to the same ledger/result.
+	RequestGroupIDContextKey ContextKey = "RequestGroupID"
 	// SandboxTenantIDContextKey carries the tenant that owns the session whose
 	// sandbox is being addressed, which is NOT always the tenant in
 	// TenantIDContextKey: a shared agent runs under the agent owner's tenant so

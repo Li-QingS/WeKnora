@@ -14,21 +14,22 @@ import (
 
 // EvalReport is the machine-readable report written to evaluation-result.json.
 type EvalReport struct {
-	RunID       string         `json:"run_id"`
-	ConfigHash  string         `json:"config_hash"`
-	Status      int            `json:"status"`
-	StatusLabel string         `json:"status_label"`
-	Dataset     DatasetReport  `json:"dataset"`
-	Models      []ModelReport  `json:"models"`
-	Params      map[string]any `json:"params"`
-	Metric      map[string]any `json:"metric,omitempty"`
-	ErrMsg      string         `json:"err_msg,omitempty"`
-	Finished    int            `json:"finished"`
-	Total       int            `json:"total"`
-	Version     map[string]any `json:"version,omitempty"`
-	Reproduce   string         `json:"reproduce"`
-	GeneratedAt string         `json:"generated_at"`
-	Comparison  *Comparison    `json:"comparison,omitempty"`
+	RunID       string          `json:"run_id"`
+	ConfigHash  string          `json:"config_hash"`
+	Status      int             `json:"status"`
+	StatusLabel string          `json:"status_label"`
+	Dataset     DatasetReport   `json:"dataset"`
+	Models      []ModelReport   `json:"models"`
+	Chunking    *ChunkingReport `json:"chunking,omitempty"`
+	Params      map[string]any  `json:"params"`
+	Metric      map[string]any  `json:"metric,omitempty"`
+	ErrMsg      string          `json:"err_msg,omitempty"`
+	Finished    int             `json:"finished"`
+	Total       int             `json:"total"`
+	Version     map[string]any  `json:"version,omitempty"`
+	Reproduce   string          `json:"reproduce"`
+	GeneratedAt string          `json:"generated_at"`
+	Comparison  *Comparison     `json:"comparison,omitempty"`
 }
 
 // LoadResult reads an evaluation-result.json written by WriteReports.
@@ -59,10 +60,20 @@ type ModelReport struct {
 	Type     string `json:"type"`
 }
 
+// ChunkingReport identifies the chunking parameters recorded for a run.
+type ChunkingReport struct {
+	Strategy     string   `json:"strategy"`
+	ChunkSize    int      `json:"chunk_size,omitempty"`
+	ChunkOverlap int      `json:"chunk_overlap,omitempty"`
+	TokenLimit   int      `json:"token_limit,omitempty"`
+	Languages    []string `json:"languages,omitempty"`
+}
+
 type configSnapshot struct {
-	Dataset DatasetReport  `json:"dataset"`
-	Models  []ModelReport  `json:"models"`
-	Version map[string]any `json:"version"`
+	Dataset  DatasetReport   `json:"dataset"`
+	Models   []ModelReport   `json:"models"`
+	Chunking *ChunkingReport `json:"chunking,omitempty"`
+	Version  map[string]any  `json:"version"`
 }
 
 // BuildReport assembles the final report from the terminal task detail and
@@ -101,6 +112,7 @@ func BuildReport(detail *sdk.EvaluationDetail, run *sdk.EvaluationRun, reproduce
 			report.Dataset = DatasetReport{ID: run.DatasetID}
 		}
 		report.Models = snapshot.Models
+		report.Chunking = snapshot.Chunking
 		report.Version = snapshot.Version
 	}
 	if report.Dataset.ID == "" {
@@ -161,6 +173,13 @@ func renderMarkdown(report *EvalReport) string {
 	fmt.Fprintf(&b, "- Status: %s (%d)\n", report.StatusLabel, report.Status)
 	fmt.Fprintf(&b, "- Dataset: `%s` (sha256 `%s`, %d samples)\n",
 		report.Dataset.ID, report.Dataset.SHA256, report.Dataset.SampleCount)
+	if report.Chunking != nil {
+		fmt.Fprintf(&b, "- Chunking: strategy `%s`, chunk_size %d, chunk_overlap %d\n",
+			report.Chunking.Strategy, report.Chunking.ChunkSize, report.Chunking.ChunkOverlap)
+		if len(report.Chunking.Languages) > 0 {
+			fmt.Fprintf(&b, "- Chunking languages: %v\n", report.Chunking.Languages)
+		}
+	}
 	fmt.Fprintf(&b, "- Progress: %d/%d\n", report.Finished, report.Total)
 	if report.ErrMsg != "" {
 		fmt.Fprintf(&b, "- Error: %s\n", report.ErrMsg)
@@ -168,12 +187,17 @@ func renderMarkdown(report *EvalReport) string {
 	fmt.Fprintf(&b, "\n## Reproduce\n\n```bash\n%s\n```\n", report.Reproduce)
 	if len(report.Metric) > 0 {
 		fmt.Fprintf(&b, "\n## Metrics\n\n")
-		for _, group := range []string{"retrieval_metrics", "generation_metrics"} {
+		for _, group := range []string{
+			"retrieval_metrics",
+			"generation_metrics",
+			"cost_metrics",
+			"latency_metrics",
+		} {
 			if metrics, ok := report.Metric[group].(map[string]any); ok {
 				fmt.Fprintf(&b, "### %s\n\n", strings.ReplaceAll(group, "_", " "))
 				fmt.Fprintf(&b, "| Metric | Value |\n| --- | --- |\n")
 				for k, v := range metrics {
-					fmt.Fprintf(&b, "| %s | %v |\n", k, v)
+					fmt.Fprintf(&b, "| %s | %s |\n", k, reportMetricValue(v))
 				}
 				fmt.Fprintf(&b, "\n")
 			}
@@ -195,6 +219,19 @@ func renderMarkdown(report *EvalReport) string {
 	}
 	fmt.Fprintf(&b, "Generated at %s\n", report.GeneratedAt)
 	return b.String()
+}
+
+func reportMetricValue(value any) string {
+	if value == nil {
+		return "unknown"
+	}
+	if number, ok := value.(float64); ok {
+		return fmt.Sprintf("%.6f", number)
+	}
+	if number, ok := value.(int64); ok {
+		return fmt.Sprintf("%d", number)
+	}
+	return fmt.Sprintf("%v", value)
 }
 
 func statusLabel(status int) string {

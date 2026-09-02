@@ -49,3 +49,11 @@ func TestRecordPropagatesRecorderError(t *testing.T) {
 		t.Fatalf("err=%v, want %v", err, want)
 	}
 }
+
+func TestNewCallInfoCarriesRequestGroup(t *testing.T) {
+	ctx := types.WithRequestGroupID(context.Background(), "evaluation_run_1")
+	info := NewCallInfo(ctx, 1, string(types.ModelTypeEmbedding), "embed-1", "Embed")
+	if info.RequestGroupID != "evaluation_run_1" {
+		t.Fatalf("request group = %q, want evaluation_run_1", info.RequestGroupID)
+	}
+}

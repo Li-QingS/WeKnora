@@ -64,6 +64,37 @@ func TestDataset_LoadDefault(t *testing.T) {
 	assert.Len(t, loaded.Pairs, loaded.SampleCount)
 }
 
+func TestDataset_LoadEnterpriseRAGSample(t *testing.T) {
+	oldRoot := datasetRoot
+	datasetRoot = filepath.Join("..", "..", "..", "dataset")
+	t.Cleanup(func() { datasetRoot = oldRoot })
+
+	svc := NewDatasetService()
+	loaded, err := svc.GetDatasetByID(context.Background(), "enterprise_rag")
+	require.NoError(t, err)
+	assert.Equal(t, 50, loaded.SampleCount)
+	assert.NotEmpty(t, loaded.SHA256)
+	assert.Equal(t, "df62c155c94c07f72a85cf1176a3a603d3f61011a3d315a0ee8c750a8544f3f7", loaded.SHA256)
+	assert.Len(t, loaded.Pairs, 50)
+	assert.Equal(t, 1, loaded.Pairs[0].QID)
+}
+
+func TestDataset_ListAvailableDatasets(t *testing.T) {
+	oldRoot := datasetRoot
+	datasetRoot = filepath.Join("..", "..", "..", "dataset")
+	t.Cleanup(func() { datasetRoot = oldRoot })
+
+	datasets, err := NewDatasetService().ListAvailableDatasets(context.Background())
+	require.NoError(t, err)
+	ids := make([]string, 0, len(datasets))
+	for _, dataset := range datasets {
+		ids = append(ids, dataset.ID)
+	}
+	assert.Contains(t, ids, "default")
+	assert.Contains(t, ids, "demo")
+	assert.Contains(t, ids, "enterprise_rag")
+}
+
 func TestDataset_InvalidIDRejected(t *testing.T) {
 	svc := NewDatasetService()
 	for _, id := range []string{"../escape", "/abs/path", "a b", "demo;rm"} {
