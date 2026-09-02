@@ -346,6 +346,10 @@ const WikiPageModifyUserPrompt = `{{if .HasAdditions}}<shared_source_contexts>
 {{.SharedSourceContexts}}</shared_source_contexts>
 {{end}}
 
+<task_scope>
+Update the wiki page declared in <page_metadata> below. The shared source context above is framing only, not evidence. Output the SUMMARY line first and do not include any other preamble.
+</task_scope>
+
 <page_metadata>
   <slug>{{.PageSlug}}</slug>
   <title>{{.PageTitle}}</title>

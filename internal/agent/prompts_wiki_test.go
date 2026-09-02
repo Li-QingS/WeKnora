@@ -181,3 +181,22 @@ func TestWikiPageModifyUserPrompt_SharedSourceContextPrecedesPageVariables(t *te
 		t.Fatalf("shared source context is not part of the cacheable prefix: %s", a[:ia])
 	}
 }
+
+func TestWikiPageModifyUserPrompt_StableTaskScopePrecedesPageMetadata(t *testing.T) {
+	const shared = "<document><title>Same Source</title><context>long shared summary</context></document>"
+	a := renderWikiPageModify(t, shared, "Alpha")
+	b := renderWikiPageModify(t, shared, "Beta")
+	marker := "\n<page_metadata>\n"
+	ia, ib := strings.Index(a, marker), strings.Index(b, marker)
+	if ia < 0 || ib < 0 {
+		t.Fatalf("rendered prompt missing page metadata marker")
+	}
+	if a[:ia] != b[:ib] {
+		t.Fatalf("stable prefix diverged across pages\nA: %s\nB: %s", a[:ia], b[:ib])
+	}
+	for _, must := range []string{"<task_scope>", "Output the SUMMARY line first"} {
+		if idx := strings.Index(a, must); idx < 0 || idx > ia {
+			t.Fatalf("%q must appear in the cacheable prefix before page metadata (idx=%d, marker=%d)", must, idx, ia)
+		}
+	}
+}
