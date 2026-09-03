@@ -346,9 +346,13 @@ const WikiPageModifyUserPrompt = `{{if .HasAdditions}}<shared_source_contexts>
 {{.SharedSourceContexts}}</shared_source_contexts>
 {{end}}
 
-<task_scope>
-Update the wiki page declared in <page_metadata> below. The shared source context above is framing only, not evidence. Output the SUMMARY line first and do not include any other preamble.
-</task_scope>
+<instructions>
+1. The FIRST line of your output MUST be: SUMMARY: {one sentence, 15-40 words, describing what this page is about after the update — for wiki index listing}.
+2. Preserve existing information that is still valid and on-topic.
+3. Keep [[slug|name]] wiki-link references ONLY if the slug appears in the <valid_wiki_links> list below. Remove any [[slug|name]] whose slug is NOT in that list. Do NOT invent new wiki-link slugs. The page's own slug declared in <page_metadata> MUST NOT appear as a [[...]] link inside its own content.
+4. Maintain the existing page structure and formatting style. Use the page title declared in <page_metadata> as the top-level heading if the page does not already have one. Do NOT introduce new heading levels beyond what the source or existing page justifies.
+5. Write in {{.Language}}.
+</instructions>
 
 <page_metadata>
   <slug>{{.PageSlug}}</slug>
@@ -385,24 +389,19 @@ The <new_information> block above is assembled from VERBATIM source chunks alrea
 {{.AvailableSlugs}}
 </valid_wiki_links>
 
-<instructions>
-1. The FIRST line of your output MUST be: SUMMARY: {one sentence, 15-40 words, describing what this page is about after the update — for wiki index listing}
+<update_rules>
 {{if .HasRetractions}}
-2. REMOVE facts/claims that were ONLY sourced from the <deleted_documents> and are NOT present in any <remaining_source_documents> or <new_information>.
+1. REMOVE facts/claims that were ONLY sourced from the <deleted_documents> and are NOT present in any <remaining_source_documents> or <new_information>.
 {{end}}
 {{if .HasAdditions}}
-3. ADD and MERGE the facts from <new_information> into the page. You are a COMPILER, not a writer:
-   - **CRITICAL CONFLICT CHECK**: First verify that the <new_information> is actually about **{{.PageTitle}}** (as declared in <page_metadata>). If a piece of new info clearly belongs to a DIFFERENT but related thing (e.g., this page is about "Hunyuan Model" but the new info is about "Qwen3"; or this page is about "居民身份证" but the new info is about "工作居住证"), you MUST REJECT that part of the new information and DO NOT add it.
-   - If it is genuinely about {{.PageTitle}} and contradicts old content, prefer the newer information.
+2. ADD and MERGE the facts from <new_information> into the page. You are a COMPILER, not a writer:
+   - **CRITICAL CONFLICT CHECK**: First verify that the <new_information> is actually about the page declared in <page_metadata>. If a piece of new info clearly belongs to a DIFFERENT but related thing (e.g., this page is about "Hunyuan Model" but the new info is about "Qwen3"; or this page is about "居民身份证" but the new info is about "工作居住证"), you MUST REJECT that part of the new information and DO NOT add it.
+   - If it is genuinely about the page declared in <page_metadata> and contradicts old content, prefer the newer information.
 {{end}}
-4. Preserve existing information that is still valid and still about {{.PageTitle}}.
-5. Keep [[slug|name]] wiki-link references ONLY if the slug appears in the <valid_wiki_links> list above. Remove any [[slug|name]] whose slug is NOT in that list. Do NOT invent new wiki-link slugs. The page's own slug ({{.PageSlug}}) MUST NOT appear as a [[...]] link inside its own content.
-6. Maintain the existing page structure and formatting style. Use "# {{.PageTitle}}" as the top-level heading if the page does not already have one. Do NOT introduce new heading levels beyond what the source or existing page justifies.
 {{if .HasRetractions}}
-7. If after removing deleted content the page becomes nearly empty and there is no new information to add, output just: "SUMMARY: (empty page)\n# {{.PageTitle}}\n\n*This page's primary source document was removed.*"
+3. If after removing deleted content the page becomes nearly empty and there is no new information to add, output just: "SUMMARY: (empty page)\n# {page title declared in <page_metadata>}\n\n*This page's primary source document was removed.*"
 {{end}}
-8. Write in {{.Language}}.
-</instructions>
+</update_rules>
 
 Output the SUMMARY line first, then the updated Markdown content. Do not include any other preamble.`
 

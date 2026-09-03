@@ -182,7 +182,7 @@ func TestWikiPageModifyUserPrompt_SharedSourceContextPrecedesPageVariables(t *te
 	}
 }
 
-func TestWikiPageModifyUserPrompt_StableTaskScopePrecedesPageMetadata(t *testing.T) {
+func TestWikiPageModifyUserPrompt_StableInstructionsPrecedePageMetadata(t *testing.T) {
 	const shared = "<document><title>Same Source</title><context>long shared summary</context></document>"
 	a := renderWikiPageModify(t, shared, "Alpha")
 	b := renderWikiPageModify(t, shared, "Beta")
@@ -194,7 +194,7 @@ func TestWikiPageModifyUserPrompt_StableTaskScopePrecedesPageMetadata(t *testing
 	if a[:ia] != b[:ib] {
 		t.Fatalf("stable prefix diverged across pages\nA: %s\nB: %s", a[:ia], b[:ib])
 	}
-	for _, must := range []string{"<task_scope>", "Output the SUMMARY line first"} {
+	for _, must := range []string{"<instructions>", "Preserve existing information", "Write in English"} {
 		if idx := strings.Index(a, must); idx < 0 || idx > ia {
 			t.Fatalf("%q must appear in the cacheable prefix before page metadata (idx=%d, marker=%d)", must, idx, ia)
 		}
