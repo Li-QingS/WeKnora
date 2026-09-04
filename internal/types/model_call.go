@@ -140,3 +140,17 @@ type ModelCallSummaryItem struct {
 	CacheMissTokens  int64    `json:"cache_miss_tokens"`
 	EstimatedCostUSD *float64 `json:"estimated_cost_usd"`
 }
+
+// ModelCallRollup is the single-row aggregate used to attribute every model
+// call to one evaluation run without pulling all records into memory.
+type ModelCallRollup struct {
+	Calls            int64    `json:"calls"`
+	DurationMS       int64    `json:"duration_ms"`
+	PromptTokens     int64    `json:"prompt_tokens"`
+	CompletionTokens int64    `json:"completion_tokens"`
+	TotalTokens      int64    `json:"total_tokens"`
+	CacheReadTokens  int64    `json:"cache_read_tokens"`
+	CacheWriteTokens int64    `json:"cache_write_tokens"`
+	CacheMissTokens  int64    `json:"cache_miss_tokens"`
+	EstimatedCostUSD *float64 `json:"estimated_cost_usd"`
+}

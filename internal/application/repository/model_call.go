@@ -73,45 +73,24 @@ func (r *modelCallRepository) Summary(
 		Where("tenant_id = ?", tenantID)
 	query = applyModelCallFilters(query, filter)
 
-	var records []*types.ModelCallRecord
-	if err := query.Find(&records).Error; err != nil {
+	var items []*types.ModelCallSummaryItem
+	if err := query.
+		Select(`model_id,
+			MAX(model_name) AS model_name,
+			MAX(model_type) AS model_type,
+			COUNT(*) AS calls,
+			SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS success_count,
+			SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count,
+			SUM(prompt_tokens) AS prompt_tokens,
+			SUM(completion_tokens) AS completion_tokens,
+			SUM(total_tokens) AS total_tokens,
+			SUM(cache_read_tokens) AS cache_read_tokens,
+			SUM(cache_write_tokens) AS cache_write_tokens,
+			SUM(cache_miss_tokens) AS cache_miss_tokens,
+			SUM(estimated_cost_usd) AS estimated_cost_usd`).
+		Group("model_id").
+		Scan(&items).Error; err != nil {
 		return nil, err
-	}
-	byModel := map[string]*types.ModelCallSummaryItem{}
-	for _, record := range records {
-		key := record.ModelID
-		item, ok := byModel[key]
-		if !ok {
-			item = &types.ModelCallSummaryItem{
-				ModelID:   record.ModelID,
-				ModelName: record.ModelName,
-				ModelType: record.ModelType,
-			}
-			byModel[key] = item
-		}
-		item.Calls++
-		if record.Status == string(types.ModelCallStatusSuccess) {
-			item.SuccessCount++
-		} else {
-			item.FailedCount++
-		}
-		item.PromptTokens += int64(record.PromptTokens)
-		item.CompletionTokens += int64(record.CompletionTokens)
-		item.TotalTokens += int64(record.TotalTokens)
-		item.CacheReadTokens += int64(record.CacheReadTokens)
-		item.CacheWriteTokens += int64(record.CacheWriteTokens)
-		item.CacheMissTokens += int64(record.CacheMissTokens)
-		if record.EstimatedCostUSD != nil {
-			if item.EstimatedCostUSD == nil {
-				value := 0.0
-				item.EstimatedCostUSD = &value
-			}
-			*item.EstimatedCostUSD += *record.EstimatedCostUSD
-		}
-	}
-	items := make([]*types.ModelCallSummaryItem, 0, len(byModel))
-	for _, item := range byModel {
-		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool {
 		if items[i].ModelType != items[j].ModelType {
@@ -123,6 +102,35 @@ func (r *modelCallRepository) Summary(
 		return items[i].ModelID < items[j].ModelID
 	})
 	return items, nil
+}
+
+// RollupRequestGroup returns one aggregate row for every model call attributed
+// to a request group. Used by evaluation cost/latency reporting.
+func (r *modelCallRepository) RollupRequestGroup(
+	ctx context.Context,
+	tenantID uint64,
+	requestGroupID string,
+) (*types.ModelCallRollup, error) {
+	var rollup types.ModelCallRollup
+	err := r.db.WithContext(ctx).Model(&types.ModelCallRecord{}).
+		Select(`COUNT(*) AS calls,
+			COALESCE(SUM(duration_ms), 0) AS duration_ms,
+			COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
+			COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
+			COALESCE(SUM(total_tokens), 0) AS total_tokens,
+			COALESCE(SUM(cache_read_tokens), 0) AS cache_read_tokens,
+			COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
+			COALESCE(SUM(cache_miss_tokens), 0) AS cache_miss_tokens,
+			SUM(estimated_cost_usd) AS estimated_cost_usd`).
+		Where("tenant_id = ? AND request_group_id = ?", tenantID, requestGroupID).
+		Scan(&rollup).Error
+	if err != nil {
+		return nil, err
+	}
+	if rollup.Calls == 0 {
+		return nil, nil
+	}
+	return &rollup, nil
 }
 
 func applyModelCallFilters(query *gorm.DB, filter *types.ModelCallFilter) *gorm.DB {

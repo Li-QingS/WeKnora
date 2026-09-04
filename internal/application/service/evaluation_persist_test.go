@@ -259,6 +259,7 @@ func (s *evalModelService) ListModels(context.Context) ([]*types.Model, error) {
 
 type evalKnowledgeBaseService struct {
 	interfaces.KnowledgeBaseService
+	deletedIDs []string
 }
 
 func (s *evalKnowledgeBaseService) CreateKnowledgeBase(
@@ -275,7 +276,8 @@ func (s *evalKnowledgeBaseService) GetKnowledgeBaseByID(
 	return &types.KnowledgeBase{ID: "kb-1", EmbeddingModelID: "embed-1", SummaryModelID: "chat-1"}, nil
 }
 
-func (s *evalKnowledgeBaseService) DeleteKnowledgeBase(context.Context, string) error {
+func (s *evalKnowledgeBaseService) DeleteKnowledgeBase(_ context.Context, id string) error {
+	s.deletedIDs = append(s.deletedIDs, id)
 	return nil
 }
 
@@ -834,6 +836,24 @@ func TestEvaluationPersist_DeleteTerminalRun(t *testing.T) {
 	require.ErrorIs(t, err, repository.ErrEvaluationRunNotFound)
 
 	require.ErrorIs(t, svc.DeleteEvaluationRun(evaluationPersistCtx(2), "run-done"), ErrEvaluationTaskNotFound)
+}
+
+func TestEvaluationPersist_DeleteTerminalRunCleansTemporaryKB(t *testing.T) {
+	repo := newFakeEvaluationRunRepository()
+	kbService := &evalKnowledgeBaseService{}
+	svc := &EvaluationService{
+		evaluationRunRepository: repo,
+		knowledgeBaseService:    kbService,
+	}
+	ctx := evaluationPersistCtx(1)
+	now := time.Now()
+	require.NoError(t, repo.Create(ctx, &types.EvaluationRun{
+		ID: "run-done", TenantID: 1, DatasetID: "ds", Status: types.EvaluationStatueSuccess,
+		StartTime: now, CreatedAt: now, TemporaryKBID: "kb-temp",
+	}))
+
+	require.NoError(t, svc.DeleteEvaluationRun(ctx, "run-done"))
+	assert.Equal(t, []string{"kb-temp"}, kbService.deletedIDs)
 }
 
 func TestEvaluationPersist_CannotDeleteActiveRun(t *testing.T) {

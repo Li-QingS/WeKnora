@@ -490,6 +490,13 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		}
 	}
 
+	// Evaluation runs interrupted by a previous process may still own an
+	// "evaluation" knowledge base whose deferred cleanup never ran. Enqueue
+	// those deletions once all delete workers and services are ready.
+	if err := container.Invoke(cleanupStaleEvaluationKnowledgeBases); err != nil {
+		logger.Warnf(ctx, "Failed to wire stale evaluation knowledge base cleanup: %v", err)
+	}
+
 	logger.Infof(ctx, "[Container] Container initialization completed successfully")
 	return container
 }
@@ -827,6 +834,61 @@ func markStaleEvaluationRuns(db *gorm.DB) {
 	}
 	if affected > 0 {
 		logger.Infof(ctx, "Marked %d stale evaluation runs as interrupted", affected)
+	}
+}
+
+func cleanupStaleEvaluationKnowledgeBases(
+	db *gorm.DB,
+	tenantService interfaces.TenantService,
+	knowledgeBaseService interfaces.KnowledgeBaseService,
+) {
+	ctx := context.Background()
+	var runs []struct {
+		TenantID      uint64
+		TemporaryKBID string
+	}
+	if err := db.Model(&types.EvaluationRun{}).
+		Select("tenant_id", "temporary_kb_id").
+		Where("status = ? AND temporary_kb_id <> ''", types.EvaluationStatueInterrupted).
+		Find(&runs).Error; err != nil {
+		logger.Warnf(ctx, "Failed to list interrupted evaluation runs for KB cleanup: %v", err)
+		return
+	}
+
+	seen := map[string]struct{}{}
+	for _, run := range runs {
+		if run.TemporaryKBID == "" {
+			continue
+		}
+		if _, ok := seen[run.TemporaryKBID]; ok {
+			continue
+		}
+		seen[run.TemporaryKBID] = struct{}{}
+
+		var active int64
+		if err := db.Table("knowledge_bases").
+			Where("id = ? AND deleted_at IS NULL", run.TemporaryKBID).
+			Count(&active).Error; err != nil {
+			logger.Warnf(ctx, "Failed to check stale evaluation KB %s: %v", run.TemporaryKBID, err)
+			continue
+		}
+		if active == 0 {
+			continue
+		}
+
+		tenant, err := tenantService.GetTenantByID(ctx, run.TenantID)
+		if err != nil || tenant == nil {
+			logger.Warnf(ctx, "Failed to load tenant %d for stale evaluation KB cleanup: %v", run.TenantID, err)
+			continue
+		}
+		cleanupCtx := context.WithValue(ctx, types.TenantIDContextKey, run.TenantID)
+		cleanupCtx = context.WithValue(cleanupCtx, types.TenantInfoContextKey, tenant)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(cleanupCtx), 2*time.Minute)
+		if err := knowledgeBaseService.DeleteKnowledgeBase(cleanupCtx, run.TemporaryKBID); err != nil &&
+			!errors.Is(err, repository.ErrKnowledgeBaseNotFound) {
+			logger.Warnf(ctx, "Failed to cleanup stale evaluation KB %s: %v", run.TemporaryKBID, err)
+		}
+		cancel()
 	}
 }
 

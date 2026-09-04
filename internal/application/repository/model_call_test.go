@@ -158,6 +158,51 @@ func TestModelCallRepositorySummary(t *testing.T) {
 	assert.InDelta(t, 0.4, *byID["m1"].EstimatedCostUSD, 0.0001)
 }
 
+func TestModelCallRepositorySummaryNoCostStaysNil(t *testing.T) {
+	db := setupModelCallTestDB(t)
+	repo := NewModelCallRepository(db)
+	require.NoError(t, repo.Create(modelCallCtx(1), newTestModelCall("a", 1, "m1", string(types.ModelCallStatusSuccess), nil)))
+
+	items, err := repo.Summary(modelCallCtx(1), 1, nil)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Nil(t, items[0].EstimatedCostUSD)
+}
+
+func TestModelCallRepositoryRollupRequestGroup(t *testing.T) {
+	db := setupModelCallTestDB(t)
+	repo := NewModelCallRepository(db)
+	okCost := 0.5
+	failCost := 0.25
+	first := newTestModelCall("a", 1, "m1", string(types.ModelCallStatusSuccess), &okCost)
+	first.RequestGroupID = "evaluation_run_1"
+	first.DurationMS = 100
+	second := newTestModelCall("b", 1, "m1", string(types.ModelCallStatusFailed), &failCost)
+	second.RequestGroupID = "evaluation_run_1"
+	second.DurationMS = 50
+	other := newTestModelCall("c", 1, "m2", string(types.ModelCallStatusSuccess), &okCost)
+	other.RequestGroupID = "evaluation_run_2"
+	require.NoError(t, repo.Create(modelCallCtx(1), first))
+	require.NoError(t, repo.Create(modelCallCtx(1), second))
+	require.NoError(t, repo.Create(modelCallCtx(1), other))
+
+	concrete := repo.(*modelCallRepository)
+	rollup, err := concrete.RollupRequestGroup(modelCallCtx(1), 1, "evaluation_run_1")
+	require.NoError(t, err)
+	require.NotNil(t, rollup)
+	assert.Equal(t, int64(2), rollup.Calls)
+	assert.Equal(t, int64(150), rollup.DurationMS)
+	assert.Equal(t, int64(20), rollup.PromptTokens)
+	assert.Equal(t, int64(10), rollup.CompletionTokens)
+	assert.Equal(t, int64(30), rollup.TotalTokens)
+	require.NotNil(t, rollup.EstimatedCostUSD)
+	assert.InDelta(t, 0.75, *rollup.EstimatedCostUSD, 0.0001)
+
+	missing, err := concrete.RollupRequestGroup(modelCallCtx(1), 1, "missing")
+	require.NoError(t, err)
+	assert.Nil(t, missing)
+}
+
 func TestModelPriceRepositoryUpsert(t *testing.T) {
 	db := setupModelCallTestDB(t)
 	repo := NewModelPriceRepository(db)

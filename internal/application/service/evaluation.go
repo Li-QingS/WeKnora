@@ -116,7 +116,28 @@ func (e *EvaluationService) DeleteEvaluationRun(ctx context.Context, taskID stri
 	if run.Status == types.EvaluationStatuePending || run.Status == types.EvaluationStatueRunning {
 		return ErrEvaluationRunActive
 	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	if err := e.cleanupTemporaryEvaluationKnowledgeBase(cleanupCtx, run); err != nil {
+		return err
+	}
 	return e.evaluationRunRepository.DeleteByID(ctx, tenantID, taskID)
+}
+
+func (e *EvaluationService) cleanupTemporaryEvaluationKnowledgeBase(
+	ctx context.Context,
+	run *types.EvaluationRun,
+) error {
+	if e.knowledgeBaseService == nil || run == nil || run.TemporaryKBID == "" {
+		return nil
+	}
+	if err := e.knowledgeBaseService.DeleteKnowledgeBase(ctx, run.TemporaryKBID); err != nil {
+		if errors.Is(err, repository.ErrKnowledgeBaseNotFound) {
+			return nil
+		}
+		return fmt.Errorf("cleanup temporary evaluation knowledge base %s: %w", run.TemporaryKBID, err)
+	}
+	return nil
 }
 
 func (e *EvaluationService) evaluationRunToDetail(run *types.EvaluationRun) (*types.EvaluationDetail, error) {
