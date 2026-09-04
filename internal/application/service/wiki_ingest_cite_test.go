@@ -194,3 +194,41 @@ func repeatRune(r rune, n int) string {
 	}
 	return string(out)
 }
+
+// TestFormatPreviousSlugsDeterministic verifies that the previous-slugs block
+// rendered into extraction prompts is byte-stable across iterations: map
+// iteration order is randomized on every range, so an unsorted implementation
+// would produce different prompt bytes between runs and break prompt-prefix
+// caching.
+func TestFormatPreviousSlugsDeterministic(t *testing.T) {
+	slugs := map[string]bool{
+		"concept/机器学习":     true,
+		"entity/zhang-san": true,
+		"entity/alibaba":   true,
+		"summary/abc":      true, // filtered out
+		"page/other":       true, // filtered out
+	}
+	want := "- concept/机器学习\n- entity/alibaba\n- entity/zhang-san\n"
+	first := formatPreviousSlugs(slugs)
+	if first != want {
+		t.Fatalf("got %q, want %q", first, want)
+	}
+	for i := 0; i < 100; i++ {
+		if got := formatPreviousSlugs(slugs); got != first {
+			t.Fatalf("formatPreviousSlugs not deterministic on iteration %d:\ngot:  %q\nwant: %q", i, got, first)
+		}
+	}
+}
+
+func TestFormatPreviousSlugsEmpty(t *testing.T) {
+	const none = "(none — this is a new document)"
+	if got := formatPreviousSlugs(nil); got != none {
+		t.Errorf("nil map: got %q", got)
+	}
+	if got := formatPreviousSlugs(map[string]bool{}); got != none {
+		t.Errorf("empty map: got %q", got)
+	}
+	if got := formatPreviousSlugs(map[string]bool{"summary/abc": true}); got != none {
+		t.Errorf("only filtered-out slugs: got %q", got)
+	}
+}

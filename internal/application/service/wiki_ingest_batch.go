@@ -1612,20 +1612,7 @@ func (s *wikiIngestService) extractEntitiesAndConceptsNoUpsert(
 	// summary slugs are code-generated from the knowledge ID and never appear
 	// in the extraction output, so including them just wastes tokens and risks
 	// confusing the model.
-	var prevSlugsText string
-	if len(oldPageSlugs) > 0 {
-		var sb strings.Builder
-		for slug := range oldPageSlugs {
-			if !strings.HasPrefix(slug, "entity/") && !strings.HasPrefix(slug, "concept/") {
-				continue
-			}
-			fmt.Fprintf(&sb, "- %s\n", slug)
-		}
-		prevSlugsText = sb.String()
-	}
-	if prevSlugsText == "" {
-		prevSlugsText = "(none — this is a new document)"
-	}
+	prevSlugsText := formatPreviousSlugs(oldPageSlugs)
 
 	extractionJSON, err := s.generateWithTemplate(ctx, chatModel, agent.WikiKnowledgeExtractPrompt, map[string]string{
 		"Content":            content,

@@ -61,6 +61,33 @@ type citationPipelineOutcome struct {
 	NewSlugCount   int
 }
 
+// formatPreviousSlugs renders the entity/concept page slugs that already
+// exist for a document as a deterministic prompt block. Go map iteration
+// order is randomized, so the slugs must be sorted before rendering: an
+// unstable order would change the prompt bytes between runs and break
+// prompt-prefix caching.
+func formatPreviousSlugs(oldPageSlugs map[string]bool) string {
+	if len(oldPageSlugs) == 0 {
+		return "(none — this is a new document)"
+	}
+	slugs := make([]string, 0, len(oldPageSlugs))
+	for slug := range oldPageSlugs {
+		if !strings.HasPrefix(slug, "entity/") && !strings.HasPrefix(slug, "concept/") {
+			continue
+		}
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	if len(slugs) == 0 {
+		return "(none — this is a new document)"
+	}
+	var sb strings.Builder
+	for _, slug := range slugs {
+		fmt.Fprintf(&sb, "- %s\n", slug)
+	}
+	return sb.String()
+}
+
 // extractCandidateSlugs runs Pass 0 of the chunk-cited pipeline: it scans the
 // full (reconstructed) document text and returns a lightweight skeleton of
 // every significant entity/concept. Unlike the legacy single-shot extraction,
@@ -77,20 +104,7 @@ func (s *wikiIngestService) extractCandidateSlugs(
 	oldPageSlugs map[string]bool,
 	batchCtx *WikiBatchContext,
 ) ([]extractedItem, []extractedItem, map[string]extractedItem, error) {
-	var prevSlugsText string
-	if len(oldPageSlugs) > 0 {
-		var sb strings.Builder
-		for slug := range oldPageSlugs {
-			if !strings.HasPrefix(slug, "entity/") && !strings.HasPrefix(slug, "concept/") {
-				continue
-			}
-			fmt.Fprintf(&sb, "- %s\n", slug)
-		}
-		prevSlugsText = sb.String()
-	}
-	if prevSlugsText == "" {
-		prevSlugsText = "(none — this is a new document)"
-	}
+	prevSlugsText := formatPreviousSlugs(oldPageSlugs)
 
 	granularity := batchCtx.ExtractionGranularity.Normalize()
 	raw, err := s.generateWithTemplate(ctx, chatModel, agent.WikiCandidateSlugPrompt, map[string]string{
