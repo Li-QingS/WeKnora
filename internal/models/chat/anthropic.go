@@ -360,7 +360,7 @@ func (c *AnthropicChat) parseResponse(resp *anthropicResponse) *types.ChatRespon
 		CompletionTokens: outputTokens,
 		TotalTokens:      promptTokens + outputTokens,
 	}
-	usage.SetPromptCacheUsage(cacheRead, cacheWrite, max(0, promptTokens-cacheRead),
+	usage.SetPromptCacheUsage(cacheRead, cacheWrite, max(0, promptTokens-cacheRead-cacheWrite),
 		resp.Usage.CacheReadInputTokens != nil || resp.Usage.CacheCreationInputTokens != nil)
 	return &types.ChatResponse{
 		Content:      strings.Join(parts, ""),
@@ -435,7 +435,7 @@ func parseAnthropicSSE(reader io.Reader) (*types.ChatResponse, error) {
 		TotalTokens:      promptTokens + outputTokens,
 	}
 	usage.SetPromptCacheUsage(cacheReadTokens, cacheWriteTokens,
-		max(0, promptTokens-cacheReadTokens), cacheReported)
+		max(0, promptTokens-cacheReadTokens-cacheWriteTokens), cacheReported)
 
 	return &types.ChatResponse{
 		Content:      strings.Join(contentParts, ""),
@@ -549,7 +549,7 @@ func mergeAnthropicUsage(
 	current.PromptTokens = uncachedInput + read + write
 	current.CompletionTokens = max(current.CompletionTokens, outputTokens)
 	current.TotalTokens = current.PromptTokens + current.CompletionTokens
-	current.SetPromptCacheUsage(read, write, max(0, current.PromptTokens-read), reported)
+	current.SetPromptCacheUsage(read, write, uncachedInput, reported)
 	return current
 }
 

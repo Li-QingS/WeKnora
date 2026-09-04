@@ -104,14 +104,17 @@ type rawPromptCacheUsage struct {
 		CacheReadInput      *int `json:"cache_read_input_tokens"`
 		CacheCreationInput  *int `json:"cache_creation_input_tokens"`
 		PromptTokensDetails *struct {
-			CachedTokens     *int `json:"cached_tokens"`
-			CacheWriteTokens *int `json:"cache_write_tokens"`
+			CachedTokens       *int `json:"cached_tokens"`
+			CacheWriteTokens   *int `json:"cache_write_tokens"`
+			CacheCreationInput *int `json:"cache_creation_input_tokens"`
 		} `json:"prompt_tokens_details"`
 	} `json:"usage"`
 }
 
 // applyRawPromptCacheUsage captures native fields discarded by the pinned
-// OpenAI-compatible SDK (notably DeepSeek hit/miss counters).
+// OpenAI-compatible SDK (DeepSeek hit/miss counters, qwen explicit-cache
+// creation tokens nested in prompt_tokens_details, and Anthropic-style
+// top-level read/write counters relayed by OpenAI-compatible gateways).
 func applyRawPromptCacheUsage(data []byte, usage *types.TokenUsage) {
 	if usage == nil || len(data) == 0 {
 		return
@@ -129,13 +132,18 @@ func applyRawPromptCacheUsage(data []byte, usage *types.TokenUsage) {
 	if raw.Usage.CacheReadInput != nil || raw.Usage.CacheCreationInput != nil {
 		read := valueOrZero(raw.Usage.CacheReadInput)
 		write := valueOrZero(raw.Usage.CacheCreationInput)
-		usage.SetPromptCacheUsage(read, write, max(0, usage.PromptTokens-read), true)
+		usage.SetPromptCacheUsage(read, write, max(0, usage.PromptTokens-read-write), true)
 		return
 	}
 	if details := raw.Usage.PromptTokensDetails; details != nil {
 		read := valueOrZero(details.CachedTokens)
 		write := valueOrZero(details.CacheWriteTokens)
-		usage.SetPromptCacheUsage(read, write, max(0, usage.PromptTokens-read), true)
+		if details.CacheWriteTokens == nil && details.CacheCreationInput != nil {
+			// Qwen explicit cache reports the write counter under the
+			// Anthropic-style name nested inside prompt_tokens_details.
+			write = valueOrZero(details.CacheCreationInput)
+		}
+		usage.SetPromptCacheUsage(read, write, max(0, usage.PromptTokens-read-write), true)
 	}
 }
 
