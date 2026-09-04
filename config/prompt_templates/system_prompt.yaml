@@ -40,8 +40,7 @@ templates:
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
 
-      The following is retrieved information that may or may not be relevant:
-      {{contexts}}
+      Retrieved materials for the current question are supplied with the user message. Answer only from those materials.
 
   - id: "expert_assistant"
     name: "Domain Expert"
