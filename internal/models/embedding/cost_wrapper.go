@@ -16,9 +16,13 @@ type costEmbedder struct {
 
 func (c *costEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	info := costledger.NewCallInfo(ctx, c.tenantID, string(types.ModelTypeEmbedding), c.inner.GetModelID(), c.inner.GetModelName())
-	info.PromptTokens = costledger.ApproxTokens([]string{text})
-	info.TotalTokens = info.PromptTokens
 	result, err := c.inner.Embed(ctx, text)
+	if err == nil {
+		// Providers do not bill failed calls and normally return no usage for
+		// them, so estimates are only filled on success.
+		info.PromptTokens = costledger.ApproxTokens([]string{text})
+		info.TotalTokens = info.PromptTokens
+	}
 	costledger.Finish(info, err)
 	if recordErr := costledger.Record(ctx, info); recordErr != nil {
 		logger.Warnf(ctx, "[cost] failed to record embedding call: %v", recordErr)
@@ -28,9 +32,11 @@ func (c *costEmbedder) Embed(ctx context.Context, text string) ([]float32, error
 
 func (c *costEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
 	info := costledger.NewCallInfo(ctx, c.tenantID, string(types.ModelTypeEmbedding), c.inner.GetModelID(), c.inner.GetModelName())
-	info.PromptTokens = costledger.ApproxTokens(texts)
-	info.TotalTokens = info.PromptTokens
 	result, err := c.inner.BatchEmbed(ctx, texts)
+	if err == nil {
+		info.PromptTokens = costledger.ApproxTokens(texts)
+		info.TotalTokens = info.PromptTokens
+	}
 	costledger.Finish(info, err)
 	if recordErr := costledger.Record(ctx, info); recordErr != nil {
 		logger.Warnf(ctx, "[cost] failed to record batch embedding call: %v", recordErr)

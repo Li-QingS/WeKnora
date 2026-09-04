@@ -16,12 +16,16 @@ type costVLM struct {
 
 func (v *costVLM) Predict(ctx context.Context, imgBytes [][]byte, prompt string) (string, error) {
 	info := costledger.NewCallInfo(ctx, v.tenantID, string(types.ModelTypeVLLM), v.inner.GetModelID(), v.inner.GetModelName())
-	info.UnitType = "requests"
-	info.UnitCount = 1
-	info.PromptTokens = costledger.ApproxTokens([]string{prompt})
-	info.TotalTokens = info.PromptTokens
 
 	result, err := v.inner.Predict(ctx, imgBytes, prompt)
+	if err == nil {
+		// Providers do not bill failed calls and normally return no usage for
+		// them, so estimates are only filled on success.
+		info.UnitType = "requests"
+		info.UnitCount = 1
+		info.PromptTokens = costledger.ApproxTokens([]string{prompt})
+		info.TotalTokens = info.PromptTokens
+	}
 	costledger.Finish(info, err)
 	if recordErr := costledger.Record(ctx, info); recordErr != nil {
 		logger.Warnf(ctx, "[cost] failed to record vlm call: %v", recordErr)

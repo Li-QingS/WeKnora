@@ -16,9 +16,12 @@ type costASR struct {
 
 func (a *costASR) Transcribe(ctx context.Context, audioBytes []byte, fileName string) (*TranscriptionResult, error) {
 	info := costledger.NewCallInfo(ctx, a.tenantID, string(types.ModelTypeASR), a.inner.GetModelID(), a.inner.GetModelName())
-	info.UnitType = "requests"
-	info.UnitCount = 1
 	result, err := a.inner.Transcribe(ctx, audioBytes, fileName)
+	if err == nil {
+		// Failed transcription requests are not billed by providers.
+		info.UnitType = "requests"
+		info.UnitCount = 1
+	}
 	costledger.Finish(info, err)
 	if recordErr := costledger.Record(ctx, info); recordErr != nil {
 		logger.Warnf(ctx, "[cost] failed to record asr call: %v", recordErr)

@@ -16,13 +16,17 @@ type costReranker struct {
 
 func (r *costReranker) Rerank(ctx context.Context, query string, documents []string) ([]RankResult, error) {
 	info := costledger.NewCallInfo(ctx, r.tenantID, string(types.ModelTypeRerank), r.inner.GetModelID(), r.inner.GetModelName())
-	info.UnitType = "documents"
-	info.UnitCount = int64(len(documents))
-	texts := append([]string{query}, documents...)
-	info.PromptTokens = costledger.ApproxTokens(texts)
-	info.TotalTokens = info.PromptTokens
 
 	results, err := r.inner.Rerank(ctx, query, documents)
+	if err == nil {
+		// Providers do not bill failed calls and normally return no usage for
+		// them, so estimates are only filled on success.
+		info.UnitType = "documents"
+		info.UnitCount = int64(len(documents))
+		texts := append([]string{query}, documents...)
+		info.PromptTokens = costledger.ApproxTokens(texts)
+		info.TotalTokens = info.PromptTokens
+	}
 	costledger.Finish(info, err)
 	if recordErr := costledger.Record(ctx, info); recordErr != nil {
 		logger.Warnf(ctx, "[cost] failed to record rerank call: %v", recordErr)
