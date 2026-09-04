@@ -1,4 +1,6 @@
 # Intent-specific system prompt templates
+# System-side templates must stay free of dynamic placeholders such as
+# {{current_time}}; current time belongs in the user-side context template.
 # Used to override the default RAG system prompt when the query intent
 # does not require retrieval (KB or web search).
 # Each template's `id` must match the QueryIntent constant value (e.g. "greeting").
@@ -47,8 +49,6 @@ templates:
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
 
-      Current time: {{current_time}}
-
   - id: "follow_up"
     name: "Follow-up Response"
     description: "System prompt for follow-up questions referencing conversation history"
@@ -70,8 +70,6 @@ templates:
 
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
-
-      Current time: {{current_time}}
 
   - id: "image_only"
     name: "Image Analysis Response"
@@ -143,8 +141,6 @@ templates:
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
 
-      Current time: {{current_time}}
-
   - id: "doc_only"
     name: "Document Analysis Response"
     description: "System prompt for pure document understanding"
@@ -166,4 +162,3 @@ templates:
 
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
-

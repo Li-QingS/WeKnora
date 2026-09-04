@@ -38,12 +38,57 @@
     </div>
 
     <t-loading :loading="loading" size="small">
+      <div v-if="priceModels.length" class="usage-section">
+        <div class="usage-section__head">
+          <h3>模型单价配置</h3>
+          <span class="usage-section__hint">USD / 百万 Token，保存后影响后续调用</span>
+        </div>
+        <table class="usage-table price-table">
+          <thead>
+            <tr>
+              <th>模型</th>
+              <th>类型</th>
+              <th>输入</th>
+              <th>输出</th>
+              <th>缓存读</th>
+              <th>缓存写</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="model in priceModels" :key="model.id">
+              <td>{{ model.display_name || model.name }}</td>
+              <td>{{ model.type }}</td>
+              <td>
+                <t-input v-model="priceDrafts[model.id!].input" type="number" min="0" step="0.001"
+                  placeholder="0" />
+              </td>
+              <td>
+                <t-input v-model="priceDrafts[model.id!].output" type="number" min="0" step="0.001"
+                  placeholder="0" />
+              </td>
+              <td>
+                <t-input v-model="priceDrafts[model.id!].cacheRead" type="number" min="0" step="0.001"
+                  placeholder="0" />
+              </td>
+              <td>
+                <t-input v-model="priceDrafts[model.id!].cacheWrite" type="number" min="0" step="0.001"
+                  placeholder="0" />
+              </td>
+              <td>
+                <t-button variant="outline" theme="primary" size="small"
+                  :loading="savingPriceId === model.id" @click="saveModelPrice(model)">
+                  保存
+                </t-button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <div class="usage-section">
         <div class="usage-section__head">
           <h3>各模型用量</h3>
-          <t-tag v-if="cacheStats" :theme="cacheEnabled ? 'success' : 'default'" size="small" variant="light">
-            {{ `Embedding 向量复用：${cacheEnabled ? '已开启' : '未开启'}` }}
-          </t-tag>
         </div>
         <table class="usage-table">
           <thead>
@@ -57,7 +102,6 @@
               <th>输出 Token</th>
               <th>总 Token</th>
               <th>Chat 缓存命中率</th>
-              <th>Embedding 复用/新增</th>
               <th>估算费用</th>
             </tr>
           </thead>
@@ -72,11 +116,10 @@
               <td>{{ item.completion_tokens }}</td>
               <td>{{ item.total_tokens }}</td>
               <td>{{ chatCacheRate(item) }}</td>
-              <td>{{ embeddingReuseLabel(item) }}</td>
               <td>{{ formatCost(item.estimated_cost_usd) }}</td>
             </tr>
             <tr v-if="!loading && summary.length === 0">
-              <td colspan="11" class="empty-cell">暂无调用记录</td>
+              <td colspan="10" class="empty-cell">暂无调用记录</td>
             </tr>
           </tbody>
         </table>
@@ -90,6 +133,39 @@
           show-page-number
           :page-size-options="[5, 10, 20]"
         />
+      </div>
+
+      <div class="usage-section">
+        <div class="usage-section__head">
+          <h3>Embedding 向量复用（进程内累计）</h3>
+          <t-tag v-if="cacheStats" :theme="cacheEnabled ? 'success' : 'default'" size="small" variant="light">
+            {{ cacheEnabled ? '已开启' : '未开启' }}
+          </t-tag>
+        </div>
+        <table class="usage-table">
+          <thead>
+            <tr>
+              <th>模型</th>
+              <th>复用次数</th>
+              <th>未命中次数</th>
+              <th>Provider 调用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="cacheStats && !cacheStats.enabled">
+              <td colspan="4" class="empty-cell">Embedding 缓存未开启</td>
+            </tr>
+            <tr v-else-if="cacheStats && embeddingModels.length === 0">
+              <td colspan="4" class="empty-cell">暂无数据</td>
+            </tr>
+            <tr v-for="model in embeddingModels" :key="model.model_id">
+              <td>{{ model.model_name || model.model_id }}</td>
+              <td>{{ model.hits }}</td>
+              <td>{{ model.misses }}</td>
+              <td>{{ model.provider_calls }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
 
       <div class="usage-section">
@@ -145,16 +221,20 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { MessagePlugin } from 'tdesign-vue-next'
 import { listModels, type ModelConfig } from '@/api/model'
 import {
   getEmbeddingCacheStats,
   getModelCallSummary,
   listModelCalls,
+  listModelPrices,
+  upsertModelPrice,
 } from '@/api/model/usage'
 import type {
   EmbeddingCacheStats,
   ModelCallRecord,
   ModelCallSummaryItem,
+  ModelPrice,
 } from '@/api/model/usage'
 
 const summary = ref<ModelCallSummaryItem[]>([])
@@ -163,6 +243,9 @@ const loading = ref(false)
 const usageError = ref('')
 const cacheStats = ref<EmbeddingCacheStats | null>(null)
 const allModels = ref<ModelConfig[]>([])
+const priceMap = ref<Record<string, ModelPrice>>({})
+const priceDrafts = ref<Record<string, PriceDraft>>({})
+const savingPriceId = ref('')
 const filterModelId = ref('')
 const filterRange = ref<string[]>([])
 const summaryPage = ref(1)
@@ -176,6 +259,13 @@ const pagedSummary = computed(() => {
   const start = (summaryPage.value - 1) * summaryPageSize.value
   return summary.value.slice(start, start + summaryPageSize.value)
 })
+const embeddingModels = computed(() => cacheStats.value?.models ?? [])
+const priceModels = computed(() =>
+  allModels.value.filter((model) => {
+    if (!model.id || model.source !== 'remote') return false
+    return model.type === 'KnowledgeQA' || model.type === 'Embedding' || model.type === 'Rerank'
+  }),
+)
 const modelFilterOptions = computed(() => {
   const byId = new Map<string, string>()
   for (const model of allModels.value) {
@@ -190,11 +280,6 @@ const modelFilterOptions = computed(() => {
   ]
 })
 
-function embeddingStats(modelId: string) {
-  const model = cacheStats.value?.models?.find((item) => item.model_id === modelId)
-  return model
-}
-
 function chatCacheRate(item: ModelCallSummaryItem): string {
   if (item.model_type !== 'KnowledgeQA') return '-'
   const denominator = item.cache_read_tokens + item.cache_miss_tokens
@@ -202,15 +287,81 @@ function chatCacheRate(item: ModelCallSummaryItem): string {
   return `${((item.cache_read_tokens / denominator) * 100).toFixed(1)}%`
 }
 
-function embeddingReuseLabel(item: ModelCallSummaryItem): string {
-  if (item.model_type !== 'Embedding') return '-'
-  const model = embeddingStats(item.model_id)
-  if (!model) return '-'
-  return `${model.hits} / ${model.misses}`
-}
-
 function formatCost(value: number | null | undefined): string {
   return value == null ? 'unknown' : `$${value.toFixed(4)}`
+}
+
+interface PriceDraft {
+  input: string
+  output: string
+  cacheRead: string
+  cacheWrite: string
+}
+
+function toText(value: number | null | undefined): string {
+  return value == null ? '' : String(value)
+}
+
+function toNullableNumber(raw: string): number | null | undefined {
+  const value = raw.trim()
+  if (!value) return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : undefined
+}
+
+function syncPriceDrafts() {
+  const next: Record<string, PriceDraft> = {}
+  for (const model of priceModels.value) {
+    const id = model.id!
+    const price = priceMap.value[id] || {}
+    next[id] = {
+      input: toText(price.input_price_per_million),
+      output: toText(price.output_price_per_million),
+      cacheRead: toText(price.cache_read_price_per_million),
+      cacheWrite: toText(price.cache_write_price_per_million),
+    }
+  }
+  priceDrafts.value = next
+}
+
+async function saveModelPrice(model: ModelConfig) {
+  const id = model.id
+  if (!id || savingPriceId.value) return
+  const draft = priceDrafts.value[id]
+  const values = {
+    input: toNullableNumber(draft.input),
+    output: toNullableNumber(draft.output),
+    cacheRead: toNullableNumber(draft.cacheRead),
+    cacheWrite: toNullableNumber(draft.cacheWrite),
+  }
+  if (Object.values(values).some((value) => value === undefined)) {
+    MessagePlugin.error('价格必须是数字或留空')
+    return
+  }
+
+  const existing = priceMap.value[id] || {}
+  savingPriceId.value = id
+  try {
+    const payload: Partial<ModelPrice> = {
+      input_price_per_million: values.input,
+      output_price_per_million: values.output,
+      cache_read_price_per_million: values.cacheRead,
+      cache_write_price_per_million: values.cacheWrite,
+      unit_type: existing.unit_type || '',
+      unit_price: existing.unit_price ?? null,
+      currency: existing.currency || 'USD',
+    }
+    const saved = await upsertModelPrice(id, payload)
+    priceMap.value = {
+      ...priceMap.value,
+      [id]: { ...existing, ...saved },
+    }
+    MessagePlugin.success(`${model.display_name || model.name} 价格已保存`)
+  } catch (err: any) {
+    MessagePlugin.error(err?.message || '保存模型价格失败')
+  } finally {
+    savingPriceId.value = ''
+  }
 }
 
 function buildFilterParams(): Record<string, unknown> {
@@ -239,7 +390,18 @@ async function loadData() {
   usageError.value = ''
   try {
     const params = buildFilterParams()
-    summary.value = await getModelCallSummary(params)
+    const [summaries, cache] = await Promise.all([
+      getModelCallSummary(params),
+      getEmbeddingCacheStats().catch(() => null),
+    ])
+    summary.value = summaries.sort((a, b) => {
+      const typeOrder = (a.model_type || '').localeCompare(b.model_type || '')
+      if (typeOrder !== 0) return typeOrder
+      const nameOrder = (a.model_name || '').localeCompare(b.model_name || '')
+      if (nameOrder !== 0) return nameOrder
+      return (a.model_id || '').localeCompare(b.model_id || '')
+    })
+    cacheStats.value = cache
     await loadRecords(recordPage.value)
   } catch (err: any) {
     usageError.value = err?.message || '加载模型用量失败'
@@ -268,14 +430,6 @@ async function onRecordPageChange() {
   }
 }
 
-async function loadCacheStats() {
-  try {
-    cacheStats.value = await getEmbeddingCacheStats()
-  } catch {
-    cacheStats.value = null
-  }
-}
-
 async function resetFilters() {
   filterModelId.value = ''
   filterRange.value = []
@@ -288,10 +442,17 @@ async function loadModelOptions() {
   } catch {
     allModels.value = []
   }
+  try {
+    const prices = await listModelPrices()
+    priceMap.value = Object.fromEntries(prices.map((price) => [price.model_id, price]))
+  } catch {
+    priceMap.value = {}
+  }
+  syncPriceDrafts()
 }
 
 onMounted(async () => {
-  await Promise.all([loadModelOptions(), loadCacheStats()])
+  await loadModelOptions()
   await loadData()
 })
 </script>
@@ -366,6 +527,11 @@ onMounted(async () => {
   margin-bottom: 10px;
 }
 
+.usage-section__hint {
+  color: var(--td-text-color-secondary, #666);
+  font-size: 12px;
+}
+
 .usage-section__head h3 {
   margin: 0;
   font-size: 14px;
@@ -388,6 +554,18 @@ onMounted(async () => {
 
 .usage-table th {
   font-weight: 600;
+}
+
+.price-table {
+  min-width: 1080px;
+}
+
+.price-table :deep(.t-input) {
+  width: 130px;
+}
+
+.price-table :deep(.t-button) {
+  white-space: nowrap;
 }
 
 .empty-cell {

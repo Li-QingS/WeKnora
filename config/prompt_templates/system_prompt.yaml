@@ -1,4 +1,6 @@
 # System prompt templates
+# Keep dynamic time/date placeholders out of this file: system prompts are the
+# first thing every request sends, so byte changes here invalidate provider caches.
 templates:
   - id: "default_kb"
     name: "Knowledge Base Q&A"
@@ -72,8 +74,6 @@ templates:
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
 
-      Current time: {{current_time}}
-
   - id: "customer_service"
     name: "Customer Service"
     description: "Friendly and professional customer service template"
@@ -104,8 +104,6 @@ templates:
 
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
-
-      Current time: {{current_time}}
 
   - id: "technical_support"
     name: "Technical Support"
@@ -139,8 +137,6 @@ templates:
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
 
-      Current time: {{current_time}}
-
   - id: "pure_chat"
     name: "General Chat"
     description: "General conversation template without knowledge base"
@@ -166,8 +162,6 @@ templates:
 
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
-
-      Current time: {{current_time}}
 
   - id: "web_search_assistant"
     name: "Web Search Assistant"
@@ -200,5 +194,3 @@ templates:
 
       ## CRITICAL: Language Rule
       - ALWAYS respond in {{language}}
-
-      Current time: {{current_time}}

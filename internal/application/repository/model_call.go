@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -112,6 +113,15 @@ func (r *modelCallRepository) Summary(
 	for _, item := range byModel {
 		items = append(items, item)
 	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].ModelType != items[j].ModelType {
+			return items[i].ModelType < items[j].ModelType
+		}
+		if items[i].ModelName != items[j].ModelName {
+			return items[i].ModelName < items[j].ModelName
+		}
+		return items[i].ModelID < items[j].ModelID
+	})
 	return items, nil
 }
 

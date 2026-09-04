@@ -103,20 +103,19 @@ var (
 func PlaceholdersByField(fieldType PromptFieldType) []PromptPlaceholder {
 	switch fieldType {
 	case PromptFieldSystemPrompt:
-		// Normal mode system prompt
+		// Normal mode system prompt. Dynamic placeholders are intentionally
+		// excluded: a changing timestamp in the cached prefix invalidates
+		// provider prefix caches for every repeated request.
 		return []PromptPlaceholder{
 			PlaceholderQuery,
 			PlaceholderContexts,
-			PlaceholderCurrentTime,
-			PlaceholderCurrentWeek,
 			PlaceholderLanguage,
 		}
 	case PromptFieldAgentSystemPrompt:
-		// Agent mode system prompt
+		// Agent mode system prompt (same dynamic-placeholder exclusion as above).
 		return []PromptPlaceholder{
 			PlaceholderKnowledgeBases,
 			PlaceholderWebSearchStatus,
-			PlaceholderCurrentTime,
 			PlaceholderLanguage,
 		}
 	case PromptFieldContextTemplate:
@@ -128,12 +127,10 @@ func PlaceholdersByField(fieldType PromptFieldType) []PromptPlaceholder {
 			PlaceholderLanguage,
 		}
 	case PromptFieldRewriteSystemPrompt:
-		// Rewrite system prompt supports same placeholders as rewrite user prompt
+		// Rewrite system prompt: dynamic time/date stays on the user side.
 		return []PromptPlaceholder{
 			PlaceholderQuery,
 			PlaceholderConversation,
-			PlaceholderCurrentTime,
-			PlaceholderYesterday,
 			PlaceholderLanguage,
 		}
 	case PromptFieldRewritePrompt:
@@ -201,6 +198,9 @@ func RenderPromptPlaceholders(template string, vals PlaceholderValues) string {
 	if template == "" {
 		return ""
 	}
+	if vals == nil {
+		vals = PlaceholderValues{}
+	}
 
 	// Populate auto-generated values when callers don't supply them.
 	autoFill := func(key, value string) {
@@ -224,4 +224,20 @@ func RenderPromptPlaceholders(template string, vals PlaceholderValues) string {
 		}
 	}
 	return result
+}
+
+// RenderSystemPromptPlaceholders is the cache-safe renderer for system prompts.
+// Dynamic time/date placeholders would change the request prefix every minute,
+// so they are forced to empty values and never auto-filled here. User-side
+// templates should call RenderPromptPlaceholders when the model genuinely
+// needs the current time.
+func RenderSystemPromptPlaceholders(template string, vals PlaceholderValues) string {
+	systemVals := make(PlaceholderValues, len(vals)+3)
+	for key, value := range vals {
+		systemVals[key] = value
+	}
+	systemVals["current_time"] = ""
+	systemVals["current_week"] = ""
+	systemVals["yesterday"] = ""
+	return RenderPromptPlaceholders(template, systemVals)
 }

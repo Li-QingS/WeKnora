@@ -148,6 +148,37 @@ func TestModelCallRecorderUnitPrice(t *testing.T) {
 	assert.InDelta(t, 1.0, *calls.records[0].EstimatedCostUSD, 0.0001)
 }
 
+func TestModelCallRecorderCacheTokensUseDiscountedPrices(t *testing.T) {
+	calls := &fakeModelCallRepo{}
+	input := 1.0
+	output := 2.0
+	read := 0.1
+	write := 3.0
+	prices := &fakeModelPriceRepo{prices: map[string]*types.ModelPrice{
+		"1:m1": {
+			TenantID:                  1,
+			ModelID:                   "m1",
+			InputPricePerMillion:      &input,
+			OutputPricePerMillion:     &output,
+			CacheReadPricePerMillion:  &read,
+			CacheWritePricePerMillion: &write,
+			Currency:                  "USD",
+		},
+	}}
+	recorder := NewModelCallRecorder(calls, prices)
+	info := modelCallInfoForTest()
+	info.PromptTokens = 1_000_000
+	info.CompletionTokens = 500_000
+	info.TotalTokens = 1_800_000
+	info.CacheReadTokens = 200_000
+	info.CacheWriteTokens = 100_000
+	info.CacheMissTokens = 700_000
+	require.NoError(t, recorder.Record(modelCostCtx(1), info))
+	require.Len(t, calls.records, 1)
+	require.NotNil(t, calls.records[0].EstimatedCostUSD)
+	assert.InDelta(t, 2.02, *calls.records[0].EstimatedCostUSD, 0.0001)
+}
+
 func TestModelCallServiceUpsertPriceTenantScoped(t *testing.T) {
 	prices := &fakeModelPriceRepo{}
 	svc := NewModelCallService(&fakeModelCallRepo{}, prices)

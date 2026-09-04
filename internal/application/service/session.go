@@ -819,7 +819,7 @@ func (s *sessionService) GenerateTitle(ctx context.Context,
 	}
 
 	// Prepare messages for title generation
-	titlePrompt := types.RenderPromptPlaceholders(s.cfg.Conversation.GenerateSessionTitlePrompt, types.PlaceholderValues{
+	titlePrompt := types.RenderSystemPromptPlaceholders(s.cfg.Conversation.GenerateSessionTitlePrompt, types.PlaceholderValues{
 		"language": types.LanguageNameFromContext(ctx),
 	})
 	var chatMessages []chat.Message

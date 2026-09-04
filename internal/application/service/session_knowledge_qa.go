@@ -1057,7 +1057,7 @@ func (s *sessionService) renderFallbackPrompt(ctx context.Context, chatManage *t
 
 	kbDocuments := s.buildKBDocumentListing(ctx, chatManage)
 
-	result := types.RenderPromptPlaceholders(chatManage.FallbackPrompt, types.PlaceholderValues{
+	result := types.RenderSystemPromptPlaceholders(chatManage.FallbackPrompt, types.PlaceholderValues{
 		"query":        query,
 		"language":     chatManage.Language,
 		"kb_documents": kbDocuments,

@@ -107,7 +107,11 @@ func estimateCost(price *types.ModelPrice, info *types.ModelCallInfo) *float64 {
 	}
 	value := 0.0
 	if price.InputPricePerMillion != nil {
-		value += float64(info.PromptTokens) / 1_000_000 * *price.InputPricePerMillion
+		uncachedInputTokens := info.PromptTokens - info.CacheReadTokens - info.CacheWriteTokens
+		if uncachedInputTokens < 0 {
+			uncachedInputTokens = 0
+		}
+		value += float64(uncachedInputTokens) / 1_000_000 * *price.InputPricePerMillion
 	}
 	if price.OutputPricePerMillion != nil {
 		value += float64(info.CompletionTokens) / 1_000_000 * *price.OutputPricePerMillion

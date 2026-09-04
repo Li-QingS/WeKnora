@@ -317,7 +317,7 @@ func (p *PluginQueryUnderstand) buildPrompts(
 		"language":     chatManage.Language,
 	}
 
-	return types.RenderPromptPlaceholders(systemPrompt, vals),
+	return types.RenderSystemPromptPlaceholders(systemPrompt, vals),
 		types.RenderPromptPlaceholders(userPrompt, vals)
 }
 

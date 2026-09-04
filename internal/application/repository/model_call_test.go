@@ -145,6 +145,8 @@ func TestModelCallRepositorySummary(t *testing.T) {
 	items, err := repo.Summary(modelCallCtx(1), 1, nil)
 	require.NoError(t, err)
 	require.Len(t, items, 2)
+	assert.Equal(t, "m1", items[0].ModelID)
+	assert.Equal(t, "m2", items[1].ModelID)
 	byID := map[string]*types.ModelCallSummaryItem{}
 	for _, item := range items {
 		byID[item.ModelID] = item

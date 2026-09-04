@@ -89,7 +89,7 @@ func NewGraphBuilder(config *config.Config, chatModel chat.Chat) types.GraphBuil
 // renderGraphExtractionPrompt applies shared placeholders (e.g. {{language}}, {{lang}}) to graph extraction templates.
 func (b *graphBuilder) renderGraphExtractionPrompt(ctx context.Context, template string) string {
 	lang := types.LanguageNameFromContext(ctx)
-	return types.RenderPromptPlaceholders(template, types.PlaceholderValues{
+	return types.RenderSystemPromptPlaceholders(template, types.PlaceholderValues{
 		"language": lang,
 	})
 }

@@ -2,8 +2,8 @@ package agent
 
 import (
 	"fmt"
+	"sort"
 	"strings"
-	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -131,16 +131,23 @@ func formatKnowledgeBaseList(kbInfos []*KnowledgeBaseInfo) string {
 		return "<knowledge_bases />"
 	}
 
+	sortedKBs := append([]*KnowledgeBaseInfo(nil), kbInfos...)
+	sort.SliceStable(sortedKBs, func(i, j int) bool {
+		return sortedKBs[i].ID < sortedKBs[j].ID
+	})
+
 	var b strings.Builder
 	b.WriteString("<knowledge_bases>\n")
-	for _, kb := range kbInfos {
+	for _, kb := range sortedKBs {
 		kbType := kb.Type
 		if kbType == "" {
 			kbType = "document"
 		}
 		capsAttr := ""
 		if len(kb.Capabilities) > 0 {
-			capsAttr = fmt.Sprintf(" capabilities=\"%s\"", strings.Join(kb.Capabilities, ","))
+			caps := append([]string(nil), kb.Capabilities...)
+			sort.Strings(caps)
+			capsAttr = fmt.Sprintf(" capabilities=\"%s\"", strings.Join(caps, ","))
 		}
 		b.WriteString(fmt.Sprintf("<knowledge_base id=\"%s\" name=\"%s\" type=\"%s\" doc_count=\"%d\"%s>\n",
 			kb.ID, kb.Name, kbType, kb.DocCount, capsAttr))
@@ -234,6 +241,11 @@ func formatSkillsMetadata(skillsMetadata []*skills.SkillMetadata, shellExecEnabl
 		return ""
 	}
 
+	sortedSkills := append([]*skills.SkillMetadata(nil), skillsMetadata...)
+	sort.SliceStable(sortedSkills, func(i, j int) bool {
+		return sortedSkills[i].Name < sortedSkills[j].Name
+	})
+
 	var builder strings.Builder
 	builder.WriteString("\n### Available Skills (IMPORTANT - READ CAREFULLY)\n\n")
 	builder.WriteString("**You MUST actively consider using these skills for EVERY user request.**\n\n")
@@ -248,7 +260,7 @@ func formatSkillsMetadata(skillsMetadata []*skills.SkillMetadata, shellExecEnabl
 	builder.WriteString("**⚠️ CRITICAL**: Skill usage is MANDATORY when applicable. Do NOT skip skills to save time or tokens.\n\n")
 
 	builder.WriteString("#### Available Skills\n\n")
-	for i, skill := range skillsMetadata {
+	for i, skill := range sortedSkills {
 		builder.WriteString(fmt.Sprintf("%d. **%s**\n", i+1, skill.Name))
 		builder.WriteString(fmt.Sprintf("   %s\n\n", skill.Description))
 	}
@@ -277,14 +289,12 @@ func formatSkillsMetadata(skillsMetadata []*skills.SkillMetadata, shellExecEnabl
 // Supported placeholders:
 //   - {{knowledge_bases}}
 //   - {{web_search_status}} -> "Enabled" or "Disabled"
-//   - {{current_time}} -> current time string
 //   - {{language}} -> user language name (e.g. "Chinese (Simplified)", "English")
 //   - {{skills}} -> formatted skills metadata (if any)
 func renderPromptPlaceholdersWithStatus(
 	template string,
 	knowledgeBases []*KnowledgeBaseInfo,
 	webSearchEnabled bool,
-	currentTime string,
 	language string,
 ) string {
 	// Knowledge bases need special formatting, so handle it first
@@ -295,9 +305,8 @@ func renderPromptPlaceholdersWithStatus(
 		status = "Enabled"
 	}
 
-	result = types.RenderPromptPlaceholders(result, types.PlaceholderValues{
+	result = types.RenderSystemPromptPlaceholders(result, types.PlaceholderValues{
 		"web_search_status": status,
-		"current_time":      currentTime,
 		"language":          language,
 		"skills":            "", // Remove {{skills}} placeholder; skills are appended separately if present
 	})
@@ -349,12 +358,11 @@ func BuildSystemPromptWithOptions(
 		template = GetProgressiveRAGSystemPrompt(cfg)
 	}
 
-	currentTime := time.Now().Format(time.RFC3339)
 	language := ""
 	if options != nil {
 		language = options.Language
 	}
-	basePrompt = renderPromptPlaceholdersWithStatus(template, knowledgeBases, webSearchEnabled, currentTime, language)
+	basePrompt = renderPromptPlaceholdersWithStatus(template, knowledgeBases, webSearchEnabled, language)
 
 	// Append skills metadata if available (Level 1 - Progressive Disclosure)
 	if options != nil && len(options.SkillsMetadata) > 0 {

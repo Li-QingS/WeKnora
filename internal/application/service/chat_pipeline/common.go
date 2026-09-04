@@ -89,7 +89,7 @@ func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 	if chatManage.SystemPromptOverride != "" {
 		base = chatManage.SystemPromptOverride
 	}
-	systemPrompt := types.RenderPromptPlaceholders(base, types.PlaceholderValues{
+	systemPrompt := types.RenderSystemPromptPlaceholders(base, types.PlaceholderValues{
 		"query":    chatManage.Query,
 		"language": chatManage.Language,
 		"contexts": chatManage.RenderedContexts,

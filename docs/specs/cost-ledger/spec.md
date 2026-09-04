@@ -51,7 +51,10 @@ WP4 的目标是在统一模型客户端层加“记账装饰器”，所有模�
   - 写入记录时保存价格快照 JSON，之后改价不影响历史记录。
 
 - **F4：费用估算。** 调用结束时按价格快照计算估算费用：
-  - `input_tokens / 1e6 * input_price` + `output_tokens / 1e6 * output_price` + cache 项；
+  - `(prompt_tokens - cache_read_tokens - cache_write_tokens) / 1e6 * input_price`
+    + `output_tokens / 1e6 * output_price`
+    + `cache_read_tokens / 1e6 * cache_read_price`
+    + `cache_write_tokens / 1e6 * cache_write_price`；
   - 非 Token 模型按 `unit_count * unit_price`；
   - 任意价格缺失时费用为 `null`，不显示 0。
 

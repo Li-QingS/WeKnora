@@ -1,8 +1,8 @@
 dataset_id: enterprise_rag
 
 models:
-  chat: ""
-  embedding: ""
+  chat: "qwen3.7-plus"
+  embedding: "qwen3.7-text-embedding"
   rerank: ""
 
 chunking:
