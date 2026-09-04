@@ -1904,6 +1904,13 @@ func (s *wikiIngestService) reduceSlugUpdates(
 		page.SourceRefs = newRefs
 	}
 
+	// Pure-input regeneration (WIKI_PAGE_REGEN_MODE=true): rebuild the page
+	// from its persisted chunk citations instead of merging into the previous
+	// LLM output, so the prompt is a pure function of the source material and
+	// stays byte-stable across runs.
+	useRegen := s.pageRegenMode && wikiPageRegenEligible(page, len(additions), len(retracts))
+	var regenSource string
+
 	if len(additions) > 0 {
 		// Resolve SourceChunks → chunk contents in a single batched query per
 		// knowledge ID, so the <new_information> block can quote the chunks
@@ -1970,6 +1977,14 @@ func (s *wikiIngestService) reduceSlugUpdates(
 		for _, key := range contextKeys {
 			sharedSourceContexts.WriteString(sourceContextByRef[key])
 		}
+
+		if useRegen {
+			regenSource = s.buildRegenSourceBlock(ctx, tenantID, page, additions, chunkContentByID)
+			if regenSource == "" {
+				// No cited chunk could be resolved; keep the legacy merge path.
+				useRegen = false
+			}
+		}
 	}
 
 	if len(additions) > 0 || len(retracts) > 0 {
@@ -2005,6 +2020,15 @@ func (s *wikiIngestService) reduceSlugUpdates(
 		existingContent = slugHandles.encodeContent(existingContent, known)
 		if !exists || existingContent == "" {
 			existingContent = "(New page)"
+		}
+
+		if useRegen {
+			// Regeneration starts from a blank page: the prompt carries the
+			// page's full persisted source material instead of the previous
+			// LLM output, so repeated runs see byte-identical prompts.
+			existingContent = "(New page)"
+			newContentBuilder.Reset()
+			newContentBuilder.WriteString(regenSource)
 		}
 
 		hasAdditionsStr := ""

@@ -453,6 +453,126 @@ func collectCitedChunkContent(chunkIDs []string, contentByID map[string]string) 
 	return sb.String()
 }
 
+// wikiPageRegenEligible reports whether a page update may take the
+// pure-input regeneration path: only additive updates to pages whose current
+// version was authored by the ingest pipeline itself. User / agent / revert
+// versions are preserved as-is — regeneration would clobber work the pipeline
+// did not author — and retract-only updates keep the legacy merge path.
+func wikiPageRegenEligible(page *types.WikiPage, additions, retracts int) bool {
+	if additions == 0 || retracts != 0 {
+		return false
+	}
+	switch page.LastEditSource {
+	case "", types.WikiEditSourcePipeline:
+		return true
+	default:
+		return false
+	}
+}
+
+// buildRegenSourceBlock loads every chunk cited for the page across all runs
+// (page.ChunkRefs plus this round's additions) and renders them as a
+// deterministic source block for pure-input page regeneration. Returns ""
+// when no cited chunk can be resolved; the caller then falls back to the
+// legacy merge path.
+func (s *wikiIngestService) buildRegenSourceBlock(
+	ctx context.Context,
+	tenantID uint64,
+	page *types.WikiPage,
+	additions []SlugUpdate,
+	resolved map[string]string,
+) string {
+	idSet := make(map[string]struct{})
+	for _, id := range page.ChunkRefs {
+		if id != "" {
+			idSet[id] = struct{}{}
+		}
+	}
+	for _, add := range additions {
+		for _, id := range add.SourceChunks {
+			if id != "" {
+				idSet[id] = struct{}{}
+			}
+		}
+	}
+	if len(idSet) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+	chunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, ids)
+	if err != nil {
+		logger.Warnf(ctx, "wiki ingest: regen source load failed: %v", err)
+		return ""
+	}
+	return renderRegenSourceBlock(chunks, regenDocTitles(page, additions), resolved)
+}
+
+// regenDocTitles maps knowledge IDs to document titles taken from the page's
+// SourceRefs ("<knowledge_id>|<doc_title>") plus this round's additions.
+func regenDocTitles(page *types.WikiPage, additions []SlugUpdate) map[string]string {
+	titles := make(map[string]string)
+	for _, ref := range page.SourceRefs {
+		if i := strings.Index(ref, "|"); i > 0 {
+			titles[ref[:i]] = ref[i+1:]
+		}
+	}
+	for _, add := range additions {
+		if add.DocTitle != "" {
+			titles[add.KnowledgeID] = add.DocTitle
+		}
+	}
+	return titles
+}
+
+// renderRegenSourceBlock is the pure renderer for the regeneration source
+// block: chunks are ordered by (knowledge, chunk index, id) and rendered one
+// <document> block each. Byte-stability across runs is the whole point — it
+// is what lets regeneration prompts compound prompt-prefix cache.
+func renderRegenSourceBlock(chunks []*types.Chunk, titles map[string]string, resolved map[string]string) string {
+	seen := make(map[string]struct{}, len(chunks))
+	ordered := make([]*types.Chunk, 0, len(chunks))
+	for _, c := range chunks {
+		if c == nil || c.ID == "" {
+			continue
+		}
+		if _, ok := seen[c.ID]; ok {
+			continue
+		}
+		seen[c.ID] = struct{}{}
+		ordered = append(ordered, c)
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].KnowledgeID != ordered[j].KnowledgeID {
+			return ordered[i].KnowledgeID < ordered[j].KnowledgeID
+		}
+		if ordered[i].ChunkIndex != ordered[j].ChunkIndex {
+			return ordered[i].ChunkIndex < ordered[j].ChunkIndex
+		}
+		return ordered[i].ID < ordered[j].ID
+	})
+	var sb strings.Builder
+	for _, c := range ordered {
+		content := c.Content
+		if strings.TrimSpace(content) == "" {
+			// Fall back to content resolved earlier in this reduce round.
+			content = resolved[c.ID]
+		}
+		if strings.TrimSpace(content) == "" {
+			continue
+		}
+		title := titles[c.KnowledgeID]
+		if title == "" {
+			title = c.KnowledgeID
+		}
+		fmt.Fprintf(&sb, "<document>\n<title>%s</title>\n<content>\n[chunk %d]\n%s\n</content>\n</document>\n\n",
+			title, c.ChunkIndex, content)
+	}
+	return sb.String()
+}
+
 // mergeCitationsIntoItems backfills SourceChunks on every extractedItem from
 // the citation map, and augments the item slices with any genuinely new slugs
 // the citation pass discovered. Items whose slug is not in citations are left

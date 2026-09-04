@@ -232,3 +232,55 @@ func TestFormatPreviousSlugsEmpty(t *testing.T) {
 		t.Errorf("only filtered-out slugs: got %q", got)
 	}
 }
+
+func TestWikiPageRegenEligible(t *testing.T) {
+	page := &types.WikiPage{}
+	if !wikiPageRegenEligible(page, 2, 0) {
+		t.Error("legacy (empty edit source) page with additions should be eligible")
+	}
+	page.LastEditSource = types.WikiEditSourcePipeline
+	if !wikiPageRegenEligible(page, 1, 0) {
+		t.Error("pipeline-authored page with additions should be eligible")
+	}
+	page.LastEditSource = types.WikiEditSourceUser
+	if wikiPageRegenEligible(page, 1, 0) {
+		t.Error("user-edited page must not be regenerated")
+	}
+	page.LastEditSource = types.WikiEditSourceAgent
+	if wikiPageRegenEligible(page, 1, 0) {
+		t.Error("agent-edited page must not be regenerated")
+	}
+	page.LastEditSource = ""
+	if wikiPageRegenEligible(page, 1, 1) {
+		t.Error("retract updates stay on the legacy merge path")
+	}
+	if wikiPageRegenEligible(page, 0, 0) {
+		t.Error("no additions means nothing to regenerate from")
+	}
+}
+
+func TestRenderRegenSourceBlockDeterministic(t *testing.T) {
+	chunks := []*types.Chunk{
+		{ID: "c3", KnowledgeID: "kb1", ChunkIndex: 2, Content: "third"},
+		{ID: "c1", KnowledgeID: "kb1", ChunkIndex: 0, Content: "first"},
+		{ID: "c2", KnowledgeID: "kb1", ChunkIndex: 1, Content: "second"},
+		{ID: "d1", KnowledgeID: "kb2", ChunkIndex: 0, Content: "other doc"},
+		{ID: "c4", KnowledgeID: "kb1", ChunkIndex: 5, Content: "   "}, // blank, dropped
+	}
+	titles := map[string]string{"kb1": "Doc One", "kb2": "Doc Two"}
+	want := "<document>\n<title>Doc One</title>\n<content>\n[chunk 0]\nfirst\n</content>\n</document>\n\n" +
+		"<document>\n<title>Doc One</title>\n<content>\n[chunk 1]\nsecond\n</content>\n</document>\n\n" +
+		"<document>\n<title>Doc One</title>\n<content>\n[chunk 2]\nthird\n</content>\n</document>\n\n" +
+		"<document>\n<title>Doc Two</title>\n<content>\n[chunk 0]\nother doc\n</content>\n</document>\n\n"
+	first := renderRegenSourceBlock(chunks, titles, nil)
+	if first != want {
+		t.Fatalf("got %q, want %q", first, want)
+	}
+	// Repeated rendering must be byte-identical so regeneration prompts stay
+	// stable across runs.
+	for i := 0; i < 50; i++ {
+		if got := renderRegenSourceBlock(chunks, titles, nil); got != first {
+			t.Fatalf("renderRegenSourceBlock not deterministic on iteration %d", i)
+		}
+	}
+}

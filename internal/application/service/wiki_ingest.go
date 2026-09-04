@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -392,6 +393,11 @@ type wikiIngestService struct {
 	// promptWarmups serializes only the first request for a reusable Wiki page
 	// prefix. Other prefixes and already-warmed cohorts stay parallel.
 	promptWarmups sync.Map
+	// pageRegenMode enables pure-input page regeneration (env
+	// WIKI_PAGE_REGEN_MODE=true): page updates are rebuilt from the page's
+	// persisted chunk citations instead of merging into the previous LLM
+	// output, so prompts stay byte-stable across runs and pages stop drifting.
+	pageRegenMode bool
 }
 
 type wikiPromptWarmup struct {
@@ -427,6 +433,7 @@ func NewWikiIngestService(
 		deadLetterRepo: deadLetterRepo,
 		redisClient:    redisClient,
 		spanTracker:    spanTracker,
+		pageRegenMode:  os.Getenv("WIKI_PAGE_REGEN_MODE") == "true",
 	}
 	return svc
 }
