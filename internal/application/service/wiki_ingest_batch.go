@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -1153,6 +1154,13 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 	return nil
 }
 
+// summaryReuseEnabled reports whether the stored-summary reuse optimization
+// is on. Default on; set WIKI_SUMMARY_REUSE=false to measure the pipeline
+// without it.
+func summaryReuseEnabled() bool {
+	return os.Getenv("WIKI_SUMMARY_REUSE") != "false"
+}
+
 // hasNewExtractedSlugs reports whether this round's extraction surfaced
 // entity/concept slugs that have no wiki page yet. New slugs mean new pages
 // will be created this round, so the stored document summary (which links
@@ -1381,7 +1389,7 @@ func (s *wikiIngestService) mapOneDocument(
 	// summary is regenerated so it links the new pages, at the cost of one
 	// cache-miss round before stability resumes.
 	summaryReused := false
-	if !hasNewExtractedSlugs(oldPageSlugs, extractedEntities, extractedConcepts) {
+	if summaryReuseEnabled() && !hasNewExtractedSlugs(oldPageSlugs, extractedEntities, extractedConcepts) {
 		if sp := s.reusableStoredSummary(ctx, payload.TenantID, payload.KnowledgeBaseID, knowledgeID); sp != nil {
 			summaryContent = "SUMMARY: " + sp.Summary + "\n" + sp.Content
 			summaryReused = true
