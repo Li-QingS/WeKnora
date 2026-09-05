@@ -3,6 +3,7 @@ package service
 import (
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -230,5 +231,28 @@ func TestFormatPreviousSlugsEmpty(t *testing.T) {
 	}
 	if got := formatPreviousSlugs(map[string]bool{"summary/abc": true}); got != none {
 		t.Errorf("only filtered-out slugs: got %q", got)
+	}
+}
+
+// TestSummaryReusable locks the reuse rule for the stored document summary:
+// the page must carry a summary line and a body, and the document must not
+// have been modified after the summary page was last written.
+func TestSummaryReusable(t *testing.T) {
+	now := time.Now()
+	page := &types.WikiPage{Summary: "s", Content: "body", UpdatedAt: now}
+	if !summaryReusable(page, now.Add(-time.Hour)) {
+		t.Error("document older than the summary page should reuse it")
+	}
+	if summaryReusable(page, now.Add(time.Hour)) {
+		t.Error("document changed after the summary must regenerate")
+	}
+	if summaryReusable(&types.WikiPage{Content: "b", UpdatedAt: now}, now.Add(-time.Hour)) {
+		t.Error("empty summary line must not be reused")
+	}
+	if summaryReusable(&types.WikiPage{Summary: "s", UpdatedAt: now}, now.Add(-time.Hour)) {
+		t.Error("empty body must not be reused")
+	}
+	if summaryReusable(nil, now) {
+		t.Error("nil page must not be reused")
 	}
 }

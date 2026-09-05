@@ -1153,6 +1153,36 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 	return nil
 }
 
+// summaryReusable reports whether a stored summary page can stand in for a
+// fresh summary generation: it must carry both a summary line and a body,
+// and the document must not have been modified after the summary page was
+// last written.
+func summaryReusable(sp *types.WikiPage, knowledgeUpdatedAt time.Time) bool {
+	if sp == nil || strings.TrimSpace(sp.Summary) == "" || strings.TrimSpace(sp.Content) == "" {
+		return false
+	}
+	return !knowledgeUpdatedAt.After(sp.UpdatedAt)
+}
+
+// reusableStoredSummary returns the stored summary page for the knowledge
+// when summaryReusable holds for it, else nil.
+func (s *wikiIngestService) reusableStoredSummary(
+	ctx context.Context, tenantID uint64, kbID, knowledgeID string,
+) *types.WikiPage {
+	sp, err := s.wikiService.GetPageBySlug(ctx, kbID, "summary/"+knowledgeID)
+	if err != nil || sp == nil || sp.DeletedAt.Valid {
+		return nil
+	}
+	k, err := s.knowledgeRepo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
+	if err != nil || k == nil {
+		return nil
+	}
+	if !summaryReusable(sp, k.UpdatedAt) {
+		return nil
+	}
+	return sp
+}
+
 func (s *wikiIngestService) mapOneDocument(
 	ctx context.Context,
 	chatModel chat.Chat,
@@ -1322,28 +1352,45 @@ func (s *wikiIngestService) mapOneDocument(
 		})
 	}
 
+	// Reuse the stored document summary when the document has not changed
+	// since the summary was generated. The summary opens every page-update
+	// prompt as shared_source_contexts; regenerating it on every run (LLM
+	// output drifts between runs) invalidates cross-run prompt-prefix
+	// caching for the whole pipeline, and costs one 0%-hit LLM call.
+	summaryReused := false
+	if sp := s.reusableStoredSummary(ctx, payload.TenantID, payload.KnowledgeBaseID, knowledgeID); sp != nil {
+		summaryContent = "SUMMARY: " + sp.Summary + "\n" + sp.Content
+		summaryReused = true
+		s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{"reused": true, "slug": sp.Slug})
+		logger.Infof(ctx, "wiki ingest: document %s unchanged, reuse stored summary", knowledgeID)
+	}
+
 	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		summaryContent, summaryErr = s.generateWithTemplate(ctx, chatModel, agent.WikiSummaryPrompt, map[string]string{
-			"Content":            content,
-			"Language":           lang,
-			"ExtractedSlugs":     slugListing,
-			"CustomInstructions": batchCtx.ContentInstructions,
-			"InstructionScope":   "wiki_content",
-		})
-		if summaryErr != nil {
-			s.tracker().FailSpan(ctx, summarySpan, "SUMMARY_FAILED", summaryErr.Error(), summaryErr)
-		} else {
-			sumLine, sumBody := splitSummaryLine(summaryContent)
-			s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{
-				"chars":        utf8.RuneCountInString(summaryContent),
-				"summary_line": previewText(sumLine, 160),
-				"body_preview": previewText(sumBody, 320),
+	if summaryReused {
+		wg.Add(1)
+	} else {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			summaryContent, summaryErr = s.generateWithTemplate(ctx, chatModel, agent.WikiSummaryPrompt, map[string]string{
+				"Content":            content,
+				"Language":           lang,
+				"ExtractedSlugs":     slugListing,
+				"CustomInstructions": batchCtx.ContentInstructions,
+				"InstructionScope":   "wiki_content",
 			})
-		}
-	}()
+			if summaryErr != nil {
+				s.tracker().FailSpan(ctx, summarySpan, "SUMMARY_FAILED", summaryErr.Error(), summaryErr)
+			} else {
+				sumLine, sumBody := splitSummaryLine(summaryContent)
+				s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{
+					"chars":        utf8.RuneCountInString(summaryContent),
+					"summary_line": previewText(sumLine, 160),
+					"body_preview": previewText(sumBody, 320),
+				})
+			}
+		}()
+	}
 	go func() {
 		defer wg.Done()
 		// Skip citation pass when Pass 0 has fallen back to the legacy path —
