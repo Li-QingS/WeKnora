@@ -1161,25 +1161,6 @@ func summaryReuseEnabled() bool {
 	return os.Getenv("WIKI_SUMMARY_REUSE") != "false"
 }
 
-// hasNewExtractedSlugs reports whether this round's extraction surfaced
-// entity/concept slugs that have no wiki page yet. New slugs mean new pages
-// will be created this round, so the stored document summary (which links
-// them) should be regenerated; with no new slugs the stored summary is
-// complete and can be reused for prompt-cache stability.
-func hasNewExtractedSlugs(oldPageSlugs map[string]bool, entities, concepts []extractedItem) bool {
-	for _, item := range entities {
-		if item.Slug != "" && !oldPageSlugs[item.Slug] {
-			return true
-		}
-	}
-	for _, item := range concepts {
-		if item.Slug != "" && !oldPageSlugs[item.Slug] {
-			return true
-		}
-	}
-	return false
-}
-
 // summaryReusable reports whether a stored summary page can stand in for a
 // fresh summary generation: it must carry both a summary line and a body,
 // and the document must not have been modified after the summary page was
@@ -1353,9 +1334,10 @@ func (s *wikiIngestService) mapOneDocument(
 		}
 	}
 
-	// Summary and chunk classification are independent given Pass 0 output —
-	// run them in parallel. Summary handles wiki-link injection; classification
-	// attaches concrete chunk IDs to each candidate slug.
+	// Chunk classification attaches concrete chunk IDs to each candidate
+	// slug. It runs BEFORE the summary: whether this round creates new pages
+	// (newly cited slugs) decides whether the stored document summary can be
+	// reused — see below.
 	var (
 		summaryContent string
 		summaryErr     error
@@ -1364,13 +1346,6 @@ func (s *wikiIngestService) mapOneDocument(
 		batchCount     int
 	)
 
-	// Both calls run in parallel goroutines under the same wikiSpan
-	// parent — their subspans will visually overlap in the trace view,
-	// which correctly reflects their wall-clock concurrency.
-	summarySpan := s.tracker().BeginSubSpan(ctx, wikiSpan, "postprocess.wiki.summary", types.SpanKindSubSpan, types.JSONMap{
-		"content_chars":   utf8.RuneCountInString(content),
-		"extracted_slugs": len(summaryExtractedPages),
-	})
 	var classifySpan *Span
 	if !pass0Failed {
 		classifySpan = s.tracker().BeginSubSpan(ctx, wikiSpan, "postprocess.wiki.classify", types.SpanKindSubSpan, types.JSONMap{
@@ -1378,61 +1353,12 @@ func (s *wikiIngestService) mapOneDocument(
 			"candidates": len(extractedEntities) + len(extractedConcepts),
 		})
 	}
-
-	// Reuse the stored document summary when this round produces nothing the
-	// summary should reflect: the document has not changed since the summary
-	// was generated, and Pass 0 surfaced no entity/concept beyond the pages
-	// that already exist. The summary opens every page-update prompt as
-	// shared_source_contexts; regenerating it on every run (LLM output drifts
-	// between runs) invalidates cross-run prompt-prefix caching for the whole
-	// pipeline, and costs one 0%-hit LLM call. When new slugs DO appear, the
-	// summary is regenerated so it links the new pages, at the cost of one
-	// cache-miss round before stability resumes.
-	summaryReused := false
-	if summaryReuseEnabled() && !hasNewExtractedSlugs(oldPageSlugs, extractedEntities, extractedConcepts) {
-		if sp := s.reusableStoredSummary(ctx, payload.TenantID, payload.KnowledgeBaseID, knowledgeID); sp != nil {
-			summaryContent = "SUMMARY: " + sp.Summary + "\n" + sp.Content
-			summaryReused = true
-			s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{"reused": true, "slug": sp.Slug})
-			logger.Infof(ctx, "wiki ingest: document %s unchanged, reuse stored summary", knowledgeID)
-		}
-	}
-
-	var wg sync.WaitGroup
-	if summaryReused {
-		wg.Add(1)
-	} else {
-		wg.Add(2)
-		go func() {
-			defer wg.Done()
-			summaryContent, summaryErr = s.generateWithTemplate(ctx, chatModel, agent.WikiSummaryPrompt, map[string]string{
-				"Content":            content,
-				"Language":           lang,
-				"ExtractedSlugs":     slugListing,
-				"CustomInstructions": batchCtx.ContentInstructions,
-				"InstructionScope":   "wiki_content",
-			})
-			if summaryErr != nil {
-				s.tracker().FailSpan(ctx, summarySpan, "SUMMARY_FAILED", summaryErr.Error(), summaryErr)
-			} else {
-				sumLine, sumBody := splitSummaryLine(summaryContent)
-				s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{
-					"chars":        utf8.RuneCountInString(summaryContent),
-					"summary_line": previewText(sumLine, 160),
-					"body_preview": previewText(sumBody, 320),
-				})
-			}
-		}()
-	}
-	go func() {
-		defer wg.Done()
+	if pass0Failed {
 		// Skip citation pass when Pass 0 has fallen back to the legacy path —
 		// the legacy output already contains paraphrased Details, so chunk
 		// citations would be redundant and we'd spend LLM calls for nothing.
-		if pass0Failed {
-			citations = map[string][]string{}
-			return
-		}
+		citations = map[string][]string{}
+	} else {
 		candidatesXML := renderCandidateSlugsXML(extractedEntities, extractedConcepts)
 		citations, newSlugs, batchCount = s.classifyChunkCitations(ctx, chatModel, candidatesXML, chunks, lang, batchCtx)
 		s.tracker().EndSpan(ctx, classifySpan, types.JSONMap{
@@ -1442,8 +1368,48 @@ func (s *wikiIngestService) mapOneDocument(
 			"top_cited":        topCitedSlugs(citations, 8),
 			"new_slugs_sample": previewNewSlugs(newSlugs, 8),
 		})
-	}()
-	wg.Wait()
+	}
+
+	// Reuse the stored document summary when this round creates no new pages
+	// (no newly cited slugs) and the document has not changed since the
+	// summary was generated. The summary opens every page-update prompt as
+	// shared_source_contexts; regenerating it each round (LLM output drifts)
+	// invalidates cross-run prompt-prefix caching for the whole pipeline and
+	// costs one 0%-hit LLM call. Rounds that create new pages regenerate the
+	// summary so it links them, costing one cache-miss round before
+	// stability resumes.
+	summarySpan := s.tracker().BeginSubSpan(ctx, wikiSpan, "postprocess.wiki.summary", types.SpanKindSubSpan, types.JSONMap{
+		"content_chars":   utf8.RuneCountInString(content),
+		"extracted_slugs": len(summaryExtractedPages),
+	})
+	summaryReused := false
+	if summaryReuseEnabled() && len(newSlugs) == 0 {
+		if sp := s.reusableStoredSummary(ctx, payload.TenantID, payload.KnowledgeBaseID, knowledgeID); sp != nil {
+			summaryContent = "SUMMARY: " + sp.Summary + "\n" + sp.Content
+			summaryReused = true
+			s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{"reused": true, "slug": sp.Slug})
+			logger.Infof(ctx, "wiki ingest: document %s unchanged with no new pages, reuse stored summary", knowledgeID)
+		}
+	}
+	if !summaryReused {
+		summaryContent, summaryErr = s.generateWithTemplate(ctx, chatModel, agent.WikiSummaryPrompt, map[string]string{
+			"Content":            content,
+			"Language":           lang,
+			"ExtractedSlugs":     slugListing,
+			"CustomInstructions": batchCtx.ContentInstructions,
+			"InstructionScope":   "wiki_content",
+		})
+		if summaryErr != nil {
+			s.tracker().FailSpan(ctx, summarySpan, "SUMMARY_FAILED", summaryErr.Error(), summaryErr)
+		} else {
+			sumLine, sumBody := splitSummaryLine(summaryContent)
+			s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{
+				"chars":        utf8.RuneCountInString(summaryContent),
+				"summary_line": previewText(sumLine, 160),
+				"body_preview": previewText(sumBody, 320),
+			})
+		}
+	}
 
 	// Merge citations back into the item structs (non-failing; items without
 	// citations simply keep their Description+Details fallback).
