@@ -470,11 +470,17 @@ func wikiPageRegenEligible(page *types.WikiPage, additions, retracts int) bool {
 	}
 }
 
+// regenSourceMaxRunes bounds the regeneration source block (~20K tokens of
+// raw material). ChunkRefs accumulate across update rounds and some long-lived
+// pages cite hundreds of chunks; regenerating those from the full set would
+// blow the model context, so oversized pages keep the legacy merge path.
+const regenSourceMaxRunes = 80000
+
 // buildRegenSourceBlock loads every chunk cited for the page across all runs
 // (page.ChunkRefs plus this round's additions) and renders them as a
 // deterministic source block for pure-input page regeneration. Returns ""
-// when no cited chunk can be resolved; the caller then falls back to the
-// legacy merge path.
+// when no cited chunk can be resolved or the material exceeds
+// regenSourceMaxRunes; the caller then falls back to the legacy merge path.
 func (s *wikiIngestService) buildRegenSourceBlock(
 	ctx context.Context,
 	tenantID uint64,
@@ -505,6 +511,17 @@ func (s *wikiIngestService) buildRegenSourceBlock(
 	chunks, err := s.chunkRepo.ListChunksByID(ctx, tenantID, ids)
 	if err != nil {
 		logger.Warnf(ctx, "wiki ingest: regen source load failed: %v", err)
+		return ""
+	}
+	total := 0
+	for _, c := range chunks {
+		if c != nil {
+			total += len([]rune(c.Content))
+		}
+	}
+	if total > regenSourceMaxRunes {
+		logger.Warnf(ctx, "wiki ingest: regen source too large for page %s (%d runes > %d); keeping legacy merge",
+			page.Slug, total, regenSourceMaxRunes)
 		return ""
 	}
 	return renderRegenSourceBlock(chunks, regenDocTitles(page, additions), resolved)
