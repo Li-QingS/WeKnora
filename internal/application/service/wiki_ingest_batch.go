@@ -1153,6 +1153,25 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 	return nil
 }
 
+// hasNewExtractedSlugs reports whether this round's extraction surfaced
+// entity/concept slugs that have no wiki page yet. New slugs mean new pages
+// will be created this round, so the stored document summary (which links
+// them) should be regenerated; with no new slugs the stored summary is
+// complete and can be reused for prompt-cache stability.
+func hasNewExtractedSlugs(oldPageSlugs map[string]bool, entities, concepts []extractedItem) bool {
+	for _, item := range entities {
+		if item.Slug != "" && !oldPageSlugs[item.Slug] {
+			return true
+		}
+	}
+	for _, item := range concepts {
+		if item.Slug != "" && !oldPageSlugs[item.Slug] {
+			return true
+		}
+	}
+	return false
+}
+
 // summaryReusable reports whether a stored summary page can stand in for a
 // fresh summary generation: it must carry both a summary line and a body,
 // and the document must not have been modified after the summary page was
@@ -1352,17 +1371,23 @@ func (s *wikiIngestService) mapOneDocument(
 		})
 	}
 
-	// Reuse the stored document summary when the document has not changed
-	// since the summary was generated. The summary opens every page-update
-	// prompt as shared_source_contexts; regenerating it on every run (LLM
-	// output drifts between runs) invalidates cross-run prompt-prefix
-	// caching for the whole pipeline, and costs one 0%-hit LLM call.
+	// Reuse the stored document summary when this round produces nothing the
+	// summary should reflect: the document has not changed since the summary
+	// was generated, and Pass 0 surfaced no entity/concept beyond the pages
+	// that already exist. The summary opens every page-update prompt as
+	// shared_source_contexts; regenerating it on every run (LLM output drifts
+	// between runs) invalidates cross-run prompt-prefix caching for the whole
+	// pipeline, and costs one 0%-hit LLM call. When new slugs DO appear, the
+	// summary is regenerated so it links the new pages, at the cost of one
+	// cache-miss round before stability resumes.
 	summaryReused := false
-	if sp := s.reusableStoredSummary(ctx, payload.TenantID, payload.KnowledgeBaseID, knowledgeID); sp != nil {
-		summaryContent = "SUMMARY: " + sp.Summary + "\n" + sp.Content
-		summaryReused = true
-		s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{"reused": true, "slug": sp.Slug})
-		logger.Infof(ctx, "wiki ingest: document %s unchanged, reuse stored summary", knowledgeID)
+	if !hasNewExtractedSlugs(oldPageSlugs, extractedEntities, extractedConcepts) {
+		if sp := s.reusableStoredSummary(ctx, payload.TenantID, payload.KnowledgeBaseID, knowledgeID); sp != nil {
+			summaryContent = "SUMMARY: " + sp.Summary + "\n" + sp.Content
+			summaryReused = true
+			s.tracker().EndSpan(ctx, summarySpan, types.JSONMap{"reused": true, "slug": sp.Slug})
+			logger.Infof(ctx, "wiki ingest: document %s unchanged, reuse stored summary", knowledgeID)
+		}
 	}
 
 	var wg sync.WaitGroup

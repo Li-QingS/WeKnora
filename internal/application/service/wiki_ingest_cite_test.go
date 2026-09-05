@@ -234,6 +234,34 @@ func TestFormatPreviousSlugsEmpty(t *testing.T) {
 	}
 }
 
+// TestHasNewExtractedSlugs verifies the "did this round discover anything
+// the summary should link" check used to gate summary reuse.
+func TestHasNewExtractedSlugs(t *testing.T) {
+	known := map[string]bool{"entity/acme": true, "concept/rag": true}
+	if hasNewExtractedSlugs(known,
+		[]extractedItem{{Name: "Acme", Slug: "entity/acme"}},
+		[]extractedItem{{Name: "RAG", Slug: "concept/rag"}}) {
+		t.Error("slugs that all have pages are not new")
+	}
+	if !hasNewExtractedSlugs(known,
+		[]extractedItem{{Name: "Fresh", Slug: "entity/fresh"}},
+		nil) {
+		t.Error("an extracted slug without a page is new")
+	}
+	if !hasNewExtractedSlugs(known,
+		nil,
+		[]extractedItem{{Name: "New Concept", Slug: "concept/new"}}) {
+		t.Error("a new concept slug is new")
+	}
+	if hasNewExtractedSlugs(map[string]bool{}, nil, nil) {
+		t.Error("no extraction means nothing new")
+	}
+	if !hasNewExtractedSlugs(map[string]bool{},
+		[]extractedItem{{Name: "First", Slug: "entity/first"}}, nil) {
+		t.Error("brand-new KB: first extraction is new by definition")
+	}
+}
+
 // TestSummaryReusable locks the reuse rule for the stored document summary:
 // the page must carry a summary line and a body, and the document must not
 // have been modified after the summary page was last written.
