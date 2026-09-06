@@ -177,7 +177,26 @@ func loadDatasetDir(dir string) (*types.EvaluationDataset, error) {
 		SHA256:      hash,
 		SampleCount: len(pairs),
 		Pairs:       pairs,
+		Documents:   evaluationDocuments(corpus),
 	}, nil
+}
+
+func evaluationDocuments(corpus []TextInfo) []types.EvaluationDocument {
+	documents := make([]types.EvaluationDocument, 0, len(corpus))
+	seen := make(map[int64]struct{}, len(corpus))
+	for _, item := range corpus {
+		if _, ok := seen[item.ID]; ok {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		documents = append(documents, types.EvaluationDocument{
+			ID:      item.ID,
+			Title:   fmt.Sprintf("enterprise_rag-corpus-%d", item.ID),
+			Content: item.Text,
+		})
+	}
+	sort.Slice(documents, func(i, j int) bool { return documents[i].ID < documents[j].ID })
+	return documents
 }
 
 func buildDataset(

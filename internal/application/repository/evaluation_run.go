@@ -36,6 +36,12 @@ func (r *evaluationRunRepository) Create(ctx context.Context, run *types.Evaluat
 	if len(run.ConfigSnapshot) == 0 {
 		run.ConfigSnapshot = json.RawMessage("{}")
 	}
+	if len(run.StageProgress) == 0 {
+		run.StageProgress = json.RawMessage("{}")
+	}
+	if run.EvaluationType == "" {
+		run.EvaluationType = types.EvaluationTypeRAG
+	}
 	if run.CreatedAt.IsZero() {
 		run.CreatedAt = time.Now()
 	}
@@ -68,6 +74,16 @@ func (r *evaluationRunRepository) List(
 	status *types.EvaluationStatue,
 	p *types.Pagination,
 ) ([]*types.EvaluationRun, int64, error) {
+	return r.ListByType(ctx, tenantID, types.EvaluationTypeRAG, status, p)
+}
+
+func (r *evaluationRunRepository) ListByType(
+	ctx context.Context,
+	tenantID uint64,
+	evaluationType types.EvaluationType,
+	status *types.EvaluationStatue,
+	p *types.Pagination,
+) ([]*types.EvaluationRun, int64, error) {
 	if p == nil {
 		p = &types.Pagination{}
 	}
@@ -75,7 +91,7 @@ func (r *evaluationRunRepository) List(
 	var runs []*types.EvaluationRun
 	var total int64
 	query := r.db.WithContext(ctx).Model(&types.EvaluationRun{}).
-		Where("tenant_id = ?", tenantID)
+		Where("tenant_id = ? AND evaluation_type = ?", tenantID, evaluationType)
 	if status != nil {
 		query = query.Where("status = ?", *status)
 	}
@@ -90,6 +106,105 @@ func (r *evaluationRunRepository) List(
 		return nil, 0, err
 	}
 	return runs, total, nil
+}
+
+func (r *evaluationRunRepository) UpdateStage(
+	ctx context.Context,
+	id string,
+	stage types.EvaluationStage,
+	progress types.EvaluationStageProgress,
+) error {
+	tenantID, err := tenantIDFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(progress)
+	if err != nil {
+		return fmt.Errorf("evaluation run: encode stage progress: %w", err)
+	}
+	now := time.Now()
+	return r.db.WithContext(ctx).Model(&types.EvaluationRun{}).
+		Where("id = ? AND tenant_id = ? AND status = ?", id, tenantID, types.EvaluationStatueRunning).
+		Updates(map[string]interface{}{
+			"stage":          stage,
+			"stage_progress": encoded,
+			"heartbeat_at":   now,
+			"updated_at":     now,
+		}).Error
+}
+
+func (r *evaluationRunRepository) RecordFailure(
+	ctx context.Context,
+	id string,
+	failureStage types.EvaluationStage,
+	errMsg string,
+) error {
+	tenantID, err := tenantIDFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Model(&types.EvaluationRun{}).
+		Where("id = ? AND tenant_id = ? AND status IN ?", id, tenantID, []types.EvaluationStatue{
+			types.EvaluationStatuePending,
+			types.EvaluationStatueRunning,
+		}).
+		Updates(map[string]interface{}{
+			"failure_stage": gorm.Expr(
+				"CASE WHEN failure_stage = '' THEN ? ELSE failure_stage END",
+				failureStage,
+			),
+			"err_msg":    errMsg,
+			"updated_at": time.Now(),
+		}).Error
+}
+
+func (r *evaluationRunRepository) SaveWikiResult(
+	ctx context.Context,
+	id string,
+	metric json.RawMessage,
+	resultDetail json.RawMessage,
+	configSnapshot json.RawMessage,
+) error {
+	tenantID, err := tenantIDFromContext(ctx)
+	if err != nil {
+		return err
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&types.EvaluationRun{}).
+			Where(
+				"id = ? AND tenant_id = ? AND evaluation_type = ? AND status = ?",
+				id,
+				tenantID,
+				types.EvaluationTypeWiki,
+				types.EvaluationStatueRunning,
+			).
+			Updates(map[string]interface{}{
+				"metric":          metric,
+				"result_detail":   resultDetail,
+				"config_snapshot": configSnapshot,
+				"updated_at":      time.Now(),
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrEvaluationRunNotFound
+		}
+		return nil
+	})
+}
+
+func (r *evaluationRunRepository) ListCleanupPending(ctx context.Context) ([]*types.EvaluationRun, error) {
+	var runs []*types.EvaluationRun
+	err := r.db.WithContext(ctx).
+		Where(
+			"evaluation_type = ? AND temporary_kb_id <> '' AND status IN ?",
+			types.EvaluationTypeWiki,
+			[]types.EvaluationStatue{types.EvaluationStatuePending, types.EvaluationStatueRunning},
+		).
+		Order("created_at ASC").
+		Find(&runs).Error
+	return runs, err
 }
 
 func (r *evaluationRunRepository) DeleteByID(

@@ -32,6 +32,9 @@ func newFakeEvaluationRunRepository() *fakeEvaluationRunRepository {
 func (f *fakeEvaluationRunRepository) Create(_ context.Context, run *types.EvaluationRun) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if run.EvaluationType == "" {
+		run.EvaluationType = types.EvaluationTypeRAG
+	}
 	f.runs[run.ID] = cloneEvaluationRun(run)
 	return nil
 }
@@ -71,6 +74,16 @@ func (f *fakeEvaluationRunRepository) List(
 	status *types.EvaluationStatue,
 	p *types.Pagination,
 ) ([]*types.EvaluationRun, int64, error) {
+	return f.ListByType(context.Background(), tenantID, types.EvaluationTypeRAG, status, p)
+}
+
+func (f *fakeEvaluationRunRepository) ListByType(
+	_ context.Context,
+	tenantID uint64,
+	evaluationType types.EvaluationType,
+	status *types.EvaluationStatue,
+	p *types.Pagination,
+) ([]*types.EvaluationRun, int64, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if p == nil {
@@ -79,7 +92,7 @@ func (f *fakeEvaluationRunRepository) List(
 
 	runs := make([]*types.EvaluationRun, 0)
 	for _, run := range f.runs {
-		if run.TenantID != tenantID {
+		if run.TenantID != tenantID || run.EvaluationType != evaluationType {
 			continue
 		}
 		if status != nil && run.Status != *status {
@@ -108,6 +121,73 @@ func (f *fakeEvaluationRunRepository) List(
 		runs = runs[offset:end]
 	}
 	return runs, total, nil
+}
+
+func (f *fakeEvaluationRunRepository) UpdateStage(
+	_ context.Context,
+	id string,
+	stage types.EvaluationStage,
+	progress types.EvaluationStageProgress,
+) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	run, ok := f.runs[id]
+	if !ok || run.Status != types.EvaluationStatueRunning {
+		return nil
+	}
+	run.Stage = stage
+	run.StageProgress, _ = json.Marshal(progress)
+	return nil
+}
+
+func (f *fakeEvaluationRunRepository) RecordFailure(
+	_ context.Context,
+	id string,
+	failureStage types.EvaluationStage,
+	errMsg string,
+) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	run, ok := f.runs[id]
+	if !ok || isFakeTerminal(run.Status) {
+		return nil
+	}
+	if run.FailureStage == "" {
+		run.FailureStage = failureStage
+	}
+	run.ErrMsg = errMsg
+	return nil
+}
+
+func (f *fakeEvaluationRunRepository) SaveWikiResult(
+	_ context.Context,
+	id string,
+	metric json.RawMessage,
+	resultDetail json.RawMessage,
+	configSnapshot json.RawMessage,
+) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	run, ok := f.runs[id]
+	if !ok {
+		return repository.ErrEvaluationRunNotFound
+	}
+	run.Metric = append(json.RawMessage(nil), metric...)
+	run.ResultDetail = append(json.RawMessage(nil), resultDetail...)
+	run.ConfigSnapshot = append(json.RawMessage(nil), configSnapshot...)
+	return nil
+}
+
+func (f *fakeEvaluationRunRepository) ListCleanupPending(_ context.Context) ([]*types.EvaluationRun, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var runs []*types.EvaluationRun
+	for _, run := range f.runs {
+		if run.EvaluationType == types.EvaluationTypeWiki && run.TemporaryKBID != "" && !isFakeTerminal(run.Status) {
+			runs = append(runs, cloneEvaluationRun(run))
+		}
+	}
+	return runs, nil
 }
 
 func (f *fakeEvaluationRunRepository) UpdateProgress(
@@ -234,6 +314,8 @@ func cloneEvaluationRun(run *types.EvaluationRun) *types.EvaluationRun {
 	cloned.Params = append(json.RawMessage(nil), run.Params...)
 	cloned.Metric = append(json.RawMessage(nil), run.Metric...)
 	cloned.ConfigSnapshot = append(json.RawMessage(nil), run.ConfigSnapshot...)
+	cloned.StageProgress = append(json.RawMessage(nil), run.StageProgress...)
+	cloned.ResultDetail = append(json.RawMessage(nil), run.ResultDetail...)
 	return &cloned
 }
 

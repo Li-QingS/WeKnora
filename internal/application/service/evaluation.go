@@ -411,6 +411,7 @@ func (e *EvaluationService) Evaluation(ctx context.Context, opts *types.Evaluati
 		ConfigHash:     configHash,
 		ConfigSnapshot: snapshotJSON,
 		TemporaryKBID:  knowledgeBaseID,
+		EvaluationType: types.EvaluationTypeRAG,
 	}
 	logger.Info(ctx, "Persisting evaluation task")
 	if err := e.evaluationRunRepository.Create(ctx, run); err != nil {

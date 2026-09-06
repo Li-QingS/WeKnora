@@ -30,10 +30,11 @@ func InjectTracing(ctx context.Context, carrier types.LangfuseTracingCarrier) {
 		return
 	}
 	mgr := GetManager()
+	tc := types.TracingContext{RequestGroupID: types.RequestGroupIDFromContext(ctx)}
 	if !mgr.Enabled() {
+		carrier.SetLangfuseTracing(tc)
 		return
 	}
-	tc := types.TracingContext{}
 	c := propagation.MapCarrier{}
 	propagator.Inject(ctx, c)
 	tc.LangfuseTraceparent = c["traceparent"]
@@ -82,12 +83,15 @@ func peekTracingContext(payload []byte) types.TracingContext {
 func AsynqMiddleware() asynq.MiddlewareFunc {
 	return func(next asynq.Handler) asynq.Handler {
 		return asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error {
+			tc := peekTracingContext(task.Payload())
+			if tc.RequestGroupID != "" {
+				ctx = types.WithRequestGroupID(ctx, tc.RequestGroupID)
+			}
 			mgr := GetManager()
 			if !mgr.Enabled() {
 				return next.ProcessTask(ctx, task)
 			}
 
-			tc := peekTracingContext(task.Payload())
 			taskID, _ := asynq.GetTaskID(ctx)
 			retryCount, _ := asynq.GetRetryCount(ctx)
 			maxRetry, _ := asynq.GetMaxRetry(ctx)

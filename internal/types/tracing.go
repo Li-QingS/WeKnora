@@ -18,6 +18,8 @@ package types
 // Langfuse-specific columns don't collide with business fields that may
 // happen to be named similarly.
 type TracingContext struct {
+	// RequestGroupID attributes model calls to one logical asynchronous phase.
+	RequestGroupID string `json:"request_group_id,omitempty"`
 	// LangfuseTraceID is the id of the root trace that originated this task.
 	// Kept for backward compatibility with legacy payloads; the OTLP path now
 	// propagates correlation via LangfuseTraceparent (W3C) below.

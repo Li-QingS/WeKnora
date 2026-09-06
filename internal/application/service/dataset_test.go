@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -76,7 +77,15 @@ func TestDataset_LoadEnterpriseRAGSample(t *testing.T) {
 	assert.NotEmpty(t, loaded.SHA256)
 	assert.Equal(t, "df62c155c94c07f72a85cf1176a3a603d3f61011a3d315a0ee8c750a8544f3f7", loaded.SHA256)
 	assert.Len(t, loaded.Pairs, 50)
+	assert.Len(t, loaded.Documents, 85)
 	assert.Equal(t, 1, loaded.Pairs[0].QID)
+	for i, document := range loaded.Documents {
+		assert.NotEmpty(t, document.Content)
+		assert.Equal(t, fmt.Sprintf("enterprise_rag-corpus-%d", document.ID), document.Title)
+		if i > 0 {
+			assert.Less(t, loaded.Documents[i-1].ID, document.ID)
+		}
+	}
 }
 
 func TestDataset_ListAvailableDatasets(t *testing.T) {
@@ -121,8 +130,23 @@ func TestDataset_CustomLoadAndHashStable(t *testing.T) {
 
 	assert.Equal(t, first.SHA256, second.SHA256)
 	assert.Equal(t, 2, first.SampleCount)
+	assert.Len(t, first.Documents, 2)
 	require.NotEmpty(t, first.Pairs)
 	assert.Equal(t, 1, first.Pairs[0].QID)
+}
+
+func TestDataset_DocumentsDeduplicateAndSort(t *testing.T) {
+	documents := evaluationDocuments([]TextInfo{
+		{ID: 2, Text: "second"},
+		{ID: 1, Text: "first"},
+		{ID: 2, Text: "duplicate"},
+	})
+	require.Len(t, documents, 2)
+	assert.Equal(t, int64(1), documents[0].ID)
+	assert.Equal(t, "enterprise_rag-corpus-1", documents[0].Title)
+	assert.Equal(t, "first", documents[0].Content)
+	assert.Equal(t, int64(2), documents[1].ID)
+	assert.Equal(t, "second", documents[1].Content)
 }
 
 func TestDataset_HashChangesWithContent(t *testing.T) {

@@ -17,15 +17,38 @@ type dummyPayload struct {
 	KnowledgeID string `json:"knowledge_id"`
 }
 
-// TestInjectTracing_DisabledIsZero verifies InjectTracing is a no-op when
-// Langfuse is disabled: no panics, no trace fields written.
+// TestInjectTracing_DisabledIsZero verifies model-call attribution still
+// crosses the async boundary when Langfuse tracing is disabled.
 func TestInjectTracing_DisabledIsZero(t *testing.T) {
 	_, _ = Init(Config{Enabled: false})
 
 	p := &dummyPayload{KnowledgeID: "k1"}
-	InjectTracing(context.Background(), p)
+	InjectTracing(types.WithRequestGroupID(context.Background(), "run:generation"), p)
 	if p.LangfuseTraceparent != "" || p.LangfuseTraceID != "" {
 		t.Fatalf("expected no tracing fields on disabled manager, got %+v", p.TracingContext)
+	}
+	if p.RequestGroupID != "run:generation" {
+		t.Fatalf("request group = %q, want run:generation", p.RequestGroupID)
+	}
+}
+
+func TestAsynqMiddleware_RequestGroupPropagationWhenDisabled(t *testing.T) {
+	_, _ = Init(Config{Enabled: false})
+	payload := &dummyPayload{KnowledgeID: "k1"}
+	InjectTracing(types.WithRequestGroupID(context.Background(), "run:scoring"), payload)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mw := AsynqMiddleware()(asynq.HandlerFunc(func(ctx context.Context, _ *asynq.Task) error {
+		if got := types.RequestGroupIDFromContext(ctx); got != "run:scoring" {
+			t.Fatalf("request group = %q, want run:scoring", got)
+		}
+		return nil
+	}))
+	if err := mw.ProcessTask(context.Background(), asynq.NewTask("test:type", raw)); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -39,6 +39,11 @@ CREATE TABLE evaluation_runs (
     config_hash     TEXT NOT NULL DEFAULT '',
     config_snapshot TEXT NOT NULL DEFAULT '{}',
     temporary_kb_id TEXT NOT NULL DEFAULT '',
+    evaluation_type TEXT NOT NULL DEFAULT 'rag',
+    stage           TEXT NOT NULL DEFAULT '',
+    failure_stage   TEXT NOT NULL DEFAULT '',
+    stage_progress  TEXT NOT NULL DEFAULT '{}',
+    result_detail   TEXT,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -163,6 +168,84 @@ func TestEvaluationRun_ListPagedAndStatusFiltered(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), total)
 	assert.Empty(t, runs)
+}
+
+func TestEvaluationRun_ListByType(t *testing.T) {
+	db := setupEvaluationRunTestDB(t)
+	repo := NewEvaluationRunRepository(db)
+	now := time.Now()
+	rag := newTestEvaluationRun("rag-run", 1, types.EvaluationStatueSuccess, now)
+	wiki := newTestEvaluationRun("wiki-run", 1, types.EvaluationStatueRunning, now.Add(-time.Minute))
+	wiki.EvaluationType = types.EvaluationTypeWiki
+	otherTenant := newTestEvaluationRun("wiki-other", 2, types.EvaluationStatueRunning, now)
+	otherTenant.EvaluationType = types.EvaluationTypeWiki
+	createEvaluationRuns(t, repo, rag, wiki, otherTenant)
+
+	ragRuns, total, err := repo.List(evaluationRunCtx(1), 1, nil, &types.Pagination{Page: 1, PageSize: 20})
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, ragRuns, 1)
+	assert.Equal(t, "rag-run", ragRuns[0].ID)
+
+	wikiRuns, total, err := repo.ListByType(
+		evaluationRunCtx(1), 1, types.EvaluationTypeWiki, nil, &types.Pagination{Page: 1, PageSize: 20},
+	)
+	require.NoError(t, err)
+	require.Equal(t, int64(1), total)
+	require.Len(t, wikiRuns, 1)
+	assert.Equal(t, "wiki-run", wikiRuns[0].ID)
+}
+
+func TestEvaluationRun_WikiStageResultAndCleanupQuery(t *testing.T) {
+	db := setupEvaluationRunTestDB(t)
+	repo := NewEvaluationRunRepository(db)
+	ctx := evaluationRunCtx(1)
+	run := newTestEvaluationRun("wiki-run", 1, types.EvaluationStatueRunning, time.Now())
+	run.EvaluationType = types.EvaluationTypeWiki
+	run.TemporaryKBID = "kb-temp"
+	createEvaluationRuns(t, repo, run)
+
+	require.NoError(t, repo.UpdateStage(ctx, run.ID, types.EvaluationStageGenerating, types.EvaluationStageProgress{
+		Current: 3,
+		Total:   5,
+		Message: "generating",
+	}))
+	require.NoError(t, repo.RecordFailure(ctx, run.ID, types.EvaluationStageGenerating, "first error"))
+	require.NoError(t, repo.RecordFailure(ctx, run.ID, types.EvaluationStageScoringNodes, "latest error"))
+	require.NoError(t, repo.SaveWikiResult(
+		ctx,
+		run.ID,
+		json.RawMessage(`{"overall":{"coverage":0.5}}`),
+		json.RawMessage(`{"node_matches":[]}`),
+		json.RawMessage(`{"gold":{"content_sha256":"abc"}}`),
+	))
+
+	got, err := repo.GetByID(ctx, 1, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, types.EvaluationStageGenerating, got.Stage)
+	assert.Equal(t, types.EvaluationStageGenerating, got.FailureStage)
+	assert.Equal(t, "latest error", got.ErrMsg)
+	assert.JSONEq(t, `{"current":3,"total":5,"message":"generating"}`, string(got.StageProgress))
+	assert.JSONEq(t, `{"overall":{"coverage":0.5}}`, string(got.Metric))
+	assert.JSONEq(t, `{"node_matches":[]}`, string(got.ResultDetail))
+
+	pending, err := repo.ListCleanupPending(context.Background())
+	require.NoError(t, err)
+	require.Len(t, pending, 1)
+	assert.Equal(t, run.ID, pending[0].ID)
+
+	ok, err := repo.TransitionStatus(
+		ctx,
+		run.ID,
+		[]types.EvaluationStatue{types.EvaluationStatueRunning},
+		types.EvaluationStatueFailed,
+		got.ErrMsg,
+	)
+	require.NoError(t, err)
+	require.True(t, ok)
+	pending, err = repo.ListCleanupPending(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, pending)
 }
 
 func TestEvaluationRun_TransitionStatusCASProtectsTerminal(t *testing.T) {

@@ -38,6 +38,36 @@ const (
 	EvaluationStatueInterrupted                         // Task interrupted by service restart
 )
 
+// EvaluationType identifies the evaluator that owns a persisted run.
+type EvaluationType string
+
+const (
+	EvaluationTypeRAG  EvaluationType = "rag"
+	EvaluationTypeWiki EvaluationType = "wiki"
+)
+
+// EvaluationStage identifies the current phase of a Wiki evaluation.
+type EvaluationStage string
+
+const (
+	EvaluationStageValidating   EvaluationStage = "validating"
+	EvaluationStageCreatingKB   EvaluationStage = "creating_kb"
+	EvaluationStageImporting    EvaluationStage = "importing_documents"
+	EvaluationStageGenerating   EvaluationStage = "generating_wiki"
+	EvaluationStageScoringNodes EvaluationStage = "scoring_nodes"
+	EvaluationStageScoringGraph EvaluationStage = "scoring_graph"
+	EvaluationStageSavingReport EvaluationStage = "saving_report"
+	EvaluationStageCleaningUp   EvaluationStage = "cleaning_up"
+	EvaluationStageCompleted    EvaluationStage = "completed"
+)
+
+// EvaluationStageProgress is the persisted, user-facing progress within a stage.
+type EvaluationStageProgress struct {
+	Current int    `json:"current"`
+	Total   int    `json:"total"`
+	Message string `json:"message,omitempty"`
+}
+
 // EvaluationRun is the persisted representation of an evaluation task.
 type EvaluationRun struct {
 	ID             string           `gorm:"primaryKey;type:varchar(128)" json:"id"`
@@ -55,6 +85,11 @@ type EvaluationRun struct {
 	ConfigHash     string           `gorm:"type:varchar(64)" json:"config_hash"`
 	ConfigSnapshot json.RawMessage  `gorm:"type:jsonb;default:'{}'" json:"config_snapshot"`
 	TemporaryKBID  string           `gorm:"type:varchar(128)" json:"temporary_kb_id"`
+	EvaluationType EvaluationType   `gorm:"type:varchar(16);not null;default:rag;index" json:"evaluation_type"`
+	Stage          EvaluationStage  `gorm:"type:varchar(32);not null;default:''" json:"stage,omitempty"`
+	FailureStage   EvaluationStage  `gorm:"type:varchar(32);not null;default:''" json:"failure_stage,omitempty"`
+	StageProgress  json.RawMessage  `gorm:"type:jsonb;default:'{}'" json:"stage_progress,omitempty"`
+	ResultDetail   json.RawMessage  `gorm:"type:jsonb" json:"result_detail,omitempty"`
 	CreatedAt      time.Time        `json:"created_at"`
 	UpdatedAt      time.Time        `json:"updated_at"`
 }
@@ -270,4 +305,12 @@ type EvaluationDataset struct {
 	SHA256      string
 	SampleCount int
 	Pairs       []*QAPair
+	Documents   []EvaluationDocument
+}
+
+// EvaluationDocument is one stable corpus document used by Wiki evaluation.
+type EvaluationDocument struct {
+	ID      int64  `json:"id"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
 }
