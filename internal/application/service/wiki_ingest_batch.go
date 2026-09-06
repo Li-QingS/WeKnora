@@ -1161,6 +1161,25 @@ func summaryReuseEnabled() bool {
 	return os.Getenv("WIKI_SUMMARY_REUSE") != "false"
 }
 
+// survivingNewSlugs reports whether any candidate that survived the citation
+// merge and identity stabilization will materialize as a NEW wiki page this
+// round (its slug has no page yet). New pages make the stored document
+// summary incomplete — it cannot link pages created after it was written —
+// so the summary must be regenerated instead of reused.
+func survivingNewSlugs(oldPageSlugs map[string]bool, entities, concepts []extractedItem) bool {
+	for _, item := range entities {
+		if item.Slug != "" && !oldPageSlugs[item.Slug] {
+			return true
+		}
+	}
+	for _, item := range concepts {
+		if item.Slug != "" && !oldPageSlugs[item.Slug] {
+			return true
+		}
+	}
+	return false
+}
+
 // summaryReusable reports whether a stored summary page can stand in for a
 // fresh summary generation: it must carry both a summary line and a body,
 // and the document must not have been modified after the summary page was
@@ -1370,20 +1389,34 @@ func (s *wikiIngestService) mapOneDocument(
 		})
 	}
 
+	// Merge citations into the candidate items and stabilize identities
+	// BEFORE the summary step: after this, every item that will materialize
+	// as a page this round is in the surviving lists (uncited candidates keep
+	// a Details fallback and still become pages), and near-duplicate slugs
+	// have been converged onto existing pages.
+	var uncited int
+	extractedEntities, extractedConcepts, uncited = mergeCitationsIntoItems(extractedEntities, extractedConcepts, citations, newSlugs)
+	extractedEntities, extractedConcepts = s.reclaimExtractedIdentities(
+		ctx, payload.KnowledgeBaseID, extractedEntities, extractedConcepts, batchCtx,
+	)
+
+	// New-page detection: a surviving candidate whose slug has no page yet
+	// means this round creates a page the stored summary does not link.
+	newPagePlanned := survivingNewSlugs(oldPageSlugs, extractedEntities, extractedConcepts)
+
 	// Reuse the stored document summary when this round creates no new pages
-	// (no newly cited slugs) and the document has not changed since the
-	// summary was generated. The summary opens every page-update prompt as
-	// shared_source_contexts; regenerating it each round (LLM output drifts)
-	// invalidates cross-run prompt-prefix caching for the whole pipeline and
-	// costs one 0%-hit LLM call. Rounds that create new pages regenerate the
-	// summary so it links them, costing one cache-miss round before
-	// stability resumes.
+	// and the document has not changed since the summary was generated. The
+	// summary opens every page-update prompt as shared_source_contexts;
+	// regenerating it each round (LLM output drifts) invalidates cross-run
+	// prompt-prefix caching for the whole pipeline and costs one 0%-hit LLM
+	// call. Rounds that create new pages regenerate the summary so it links
+	// them, costing one cache-miss round before stability resumes.
 	summarySpan := s.tracker().BeginSubSpan(ctx, wikiSpan, "postprocess.wiki.summary", types.SpanKindSubSpan, types.JSONMap{
 		"content_chars":   utf8.RuneCountInString(content),
 		"extracted_slugs": len(summaryExtractedPages),
 	})
 	summaryReused := false
-	if summaryReuseEnabled() && len(newSlugs) == 0 {
+	if summaryReuseEnabled() && !newPagePlanned {
 		if sp := s.reusableStoredSummary(ctx, payload.TenantID, payload.KnowledgeBaseID, knowledgeID); sp != nil {
 			summaryContent = "SUMMARY: " + sp.Summary + "\n" + sp.Content
 			summaryReused = true
@@ -1410,14 +1443,6 @@ func (s *wikiIngestService) mapOneDocument(
 			})
 		}
 	}
-
-	// Merge citations back into the item structs (non-failing; items without
-	// citations simply keep their Description+Details fallback).
-	var uncited int
-	extractedEntities, extractedConcepts, uncited = mergeCitationsIntoItems(extractedEntities, extractedConcepts, citations, newSlugs)
-	extractedEntities, extractedConcepts = s.reclaimExtractedIdentities(
-		ctx, payload.KnowledgeBaseID, extractedEntities, extractedConcepts, batchCtx,
-	)
 
 	// Rebuild slugItems so stale entries (for slugs that did not survive the
 	// merge) and brand-new slugs discovered by the citation pass are both

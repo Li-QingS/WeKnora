@@ -234,6 +234,30 @@ func TestFormatPreviousSlugsEmpty(t *testing.T) {
 	}
 }
 
+// TestSurvivingNewSlugs verifies the new-page gate for summary reuse,
+// evaluated AFTER the citation merge: uncited candidates still become pages
+// (Details fallback), so any surviving slug without a page counts as new.
+func TestSurvivingNewSlugs(t *testing.T) {
+	known := map[string]bool{"entity/acme": true, "concept/rag": true}
+	if survivingNewSlugs(known,
+		[]extractedItem{{Name: "Acme", Slug: "entity/acme", SourceChunks: []string{"c1"}}},
+		[]extractedItem{{Name: "RAG", Slug: "concept/rag", SourceChunks: []string{"c2"}}}) {
+		t.Error("candidates whose slugs all have pages are not new")
+	}
+	if !survivingNewSlugs(known,
+		[]extractedItem{{Name: "Fresh", Slug: "entity/fresh"}}, // uncited fallback still creates a page
+		nil) {
+		t.Error("a surviving candidate without a page is new")
+	}
+	if survivingNewSlugs(nil, nil, nil) {
+		t.Error("no extraction means nothing new")
+	}
+	if !survivingNewSlugs(map[string]bool{},
+		[]extractedItem{{Name: "First", Slug: "entity/first"}}, nil) {
+		t.Error("brand-new KB: first extraction is new by definition")
+	}
+}
+
 // TestSummaryReusable locks the reuse rule for the stored document summary:
 // the page must carry a summary line and a body, and the document must not
 // have been modified after the summary page was last written.
