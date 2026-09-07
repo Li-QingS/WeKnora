@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -632,5 +633,61 @@ func TestGenerateWithTemplateSetsMaxTokens(t *testing.T) {
 	}
 	if model.options.Thinking == nil || *model.options.Thinking {
 		t.Fatalf("Thinking should be non-nil false, got %#v", model.options.Thinking)
+	}
+}
+
+func TestWikiPendingOpCarriesRequestGroup(t *testing.T) {
+	ctx := types.WithRequestGroupID(context.Background(), "run-1:generation")
+	pending, err := newWikiIngestPendingOp(ctx, 7, "kb", "knowledge")
+	if err != nil {
+		t.Fatalf("newWikiIngestPendingOp() error = %v", err)
+	}
+	var op WikiPendingOp
+	if err := json.Unmarshal(pending.Payload, &op); err != nil {
+		t.Fatalf("unmarshal pending op: %v", err)
+	}
+	if op.RequestGroupID != "run-1:generation" {
+		t.Fatalf("RequestGroupID = %q", op.RequestGroupID)
+	}
+
+	restored, err := contextWithWikiPendingRequestGroup(context.Background(), []WikiPendingOp{
+		op,
+		{TracingContext: types.TracingContext{RequestGroupID: "run-1:generation"}},
+	})
+	if err != nil {
+		t.Fatalf("restore request group: %v", err)
+	}
+	if got := types.RequestGroupIDFromContext(restored); got != "run-1:generation" {
+		t.Fatalf("restored RequestGroupID = %q", got)
+	}
+}
+
+func TestWikiPendingOpRejectsInconsistentRequestGroups(t *testing.T) {
+	_, err := contextWithWikiPendingRequestGroup(context.Background(), []WikiPendingOp{
+		{TracingContext: types.TracingContext{RequestGroupID: "run-1:generation"}},
+		{TracingContext: types.TracingContext{RequestGroupID: "run-2:generation"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "inconsistent request groups") {
+		t.Fatalf("expected inconsistent request group error, got %v", err)
+	}
+}
+
+func TestWikiFinalizeRowsRestoreRequestGroup(t *testing.T) {
+	row := wikiFinalizeRow{
+		TracingContext: types.TracingContext{RequestGroupID: "run-1:generation"},
+		Slug:           "entity/example",
+	}
+	payload, err := json.Marshal(row)
+	if err != nil {
+		t.Fatalf("marshal finalize row: %v", err)
+	}
+	restored, err := contextWithWikiFinalizeRequestGroup(
+		context.Background(), []*types.TaskPendingOp{{Payload: payload}},
+	)
+	if err != nil {
+		t.Fatalf("restore finalize request group: %v", err)
+	}
+	if got := types.RequestGroupIDFromContext(restored); got != "run-1:generation" {
+		t.Fatalf("restored RequestGroupID = %q", got)
 	}
 }

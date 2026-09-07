@@ -192,6 +192,36 @@ func TestCreateKnowledgeFromFilePersistsStoredFilePathOnCreate(t *testing.T) {
 	require.Equal(t, 1, task.calls)
 }
 
+func TestCreateKnowledgeFromPassageWithTitlePersistsStableTitle(t *testing.T) {
+	repo := &createKnowledgeFileRepoStub{}
+	task := &createKnowledgeTaskEnqueuerStub{}
+	svc := &knowledgeService{
+		repo:      repo,
+		kbService: &createKnowledgeFileKBServiceStub{kb: &types.KnowledgeBase{ID: "kb-1"}},
+		task:      task,
+	}
+
+	knowledge, err := svc.CreateKnowledgeFromPassageWithTitle(
+		newCreateKnowledgeFileContext(), "kb-1", "enterprise_rag-corpus-17", []string{"content"}, "evaluation",
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, knowledge)
+	require.Equal(t, "enterprise_rag-corpus-17", knowledge.Title)
+	require.Equal(t, "enterprise_rag-corpus-17", repo.createdKnowledge.Title)
+	require.Equal(t, "evaluation", repo.createdKnowledge.Channel)
+	require.Equal(t, 1, task.calls)
+}
+
+func TestCreateKnowledgeFromPassageWithTitleRejectsBlankTitle(t *testing.T) {
+	svc := &knowledgeService{}
+	knowledge, err := svc.CreateKnowledgeFromPassageWithTitle(
+		newCreateKnowledgeFileContext(), "kb-1", "  ", []string{"content"}, "evaluation",
+	)
+	require.Error(t, err)
+	require.Nil(t, knowledge)
+}
+
 func TestCreateKnowledgeFromImageFallsBackWhenLegacyStorageConfigIsIncomplete(t *testing.T) {
 	t.Parallel()
 

@@ -713,14 +713,32 @@ func (s *knowledgeService) createKnowledgeFromFileURL(
 func (s *knowledgeService) CreateKnowledgeFromPassage(ctx context.Context,
 	kbID string, passage []string, channel string,
 ) (*types.Knowledge, error) {
-	return s.createKnowledgeFromPassageInternal(ctx, kbID, passage, false, channel)
+	return s.createKnowledgeFromPassageInternal(ctx, kbID, "", passage, false, channel)
 }
 
 // CreateKnowledgeFromPassageSync creates a knowledge entry from text passages and waits for indexing to complete.
 func (s *knowledgeService) CreateKnowledgeFromPassageSync(ctx context.Context,
 	kbID string, passage []string, channel string,
 ) (*types.Knowledge, error) {
-	return s.createKnowledgeFromPassageInternal(ctx, kbID, passage, true, channel)
+	return s.createKnowledgeFromPassageInternal(ctx, kbID, "", passage, true, channel)
+}
+
+// CreateKnowledgeFromPassageWithTitle creates an asynchronous passage
+// knowledge entry while preserving a caller-supplied, stable document title.
+// It is intentionally exposed through the narrow evaluation importer
+// interface rather than expanding the public KnowledgeService contract.
+func (s *knowledgeService) CreateKnowledgeFromPassageWithTitle(
+	ctx context.Context,
+	kbID string,
+	title string,
+	passages []string,
+	channel string,
+) (*types.Knowledge, error) {
+	safeTitle, valid := secutils.ValidateInput(title)
+	if !valid || strings.TrimSpace(safeTitle) == "" {
+		return nil, werrors.NewValidationError("标题为空或包含非法字符")
+	}
+	return s.createKnowledgeFromPassageInternal(ctx, kbID, safeTitle, passages, false, channel)
 }
 
 // CreateKnowledgeFromManual creates or saves manual Markdown knowledge content.
@@ -855,7 +873,7 @@ func (s *knowledgeService) CreateKnowledgeFromManual(ctx context.Context,
 // createKnowledgeFromPassageInternal consolidates the common logic for creating knowledge from passages.
 // When syncMode is true, chunk processing is performed synchronously; otherwise, it's processed asynchronously.
 func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Context,
-	kbID string, passage []string, syncMode bool, channel string,
+	kbID string, title string, passage []string, syncMode bool, channel string,
 ) (*types.Knowledge, error) {
 	if syncMode {
 		logger.Info(ctx, "Start creating knowledge from passage (sync)")
@@ -895,6 +913,7 @@ func (s *knowledgeService) createKnowledgeFromPassageInternal(ctx context.Contex
 		KnowledgeBaseID:  kbID,
 		Type:             "passage",
 		Channel:          defaultChannel(channel),
+		Title:            title,
 		ParseStatus:      "pending",
 		EnableStatus:     "disabled",
 		CreatedAt:        time.Now(),

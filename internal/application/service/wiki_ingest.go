@@ -272,6 +272,7 @@ type wikiFinalizeChange struct {
 // finalize lane. Exactly one of {Slug, Change, FolderIDs} is set,
 // distinguished by the row's Op column.
 type wikiFinalizeRow struct {
+	types.TracingContext
 	Slug      string              `json:"slug,omitempty"`
 	Title     string              `json:"title,omitempty"`
 	Change    *wikiFinalizeChange `json:"change,omitempty"`
@@ -329,6 +330,7 @@ const (
 // unexported and excluded from JSON so the persisted payload does not
 // duplicate the column.
 type WikiPendingOp struct {
+	types.TracingContext
 	Op          string `json:"op"`
 	KnowledgeID string `json:"knowledge_id"`
 	// Ingest fields
@@ -543,6 +545,7 @@ func newWikiIngestPendingOp(
 		KnowledgeID: knowledgeID,
 		Language:    lang,
 	}
+	langfuse.InjectTracing(ctx, &op)
 	payloadBytes, err := json.Marshal(op)
 	if err != nil {
 		return nil, fmt.Errorf("marshal wiki ingest pending op: %w", err)
@@ -615,6 +618,7 @@ func EnqueueWikiRetract(
 		FolderIDs:   payload.FolderIDs,
 		Language:    payload.Language,
 	}
+	langfuse.InjectTracing(ctx, &op)
 	payloadBytes, err := json.Marshal(op)
 	if err != nil {
 		logger.Warnf(ctx, "wiki retract: failed to marshal pending op: %v", err)
@@ -714,6 +718,7 @@ func (s *wikiIngestService) enqueueFinalize(
 	acceptedAny := false
 	for _, slug := range affectedSlugs {
 		row := wikiFinalizeRow{Slug: slug, Title: freshTitleBySlug[slug]}
+		langfuse.InjectTracing(ctx, &row)
 		b, err := json.Marshal(row)
 		if err != nil {
 			continue
@@ -732,6 +737,7 @@ func (s *wikiIngestService) enqueueFinalize(
 	}
 	for i := range changes {
 		row := wikiFinalizeRow{Change: &changes[i]}
+		langfuse.InjectTracing(ctx, &row)
 		b, err := json.Marshal(row)
 		if err != nil {
 			continue
@@ -750,6 +756,7 @@ func (s *wikiIngestService) enqueueFinalize(
 	}
 	if len(folderIDs) > 0 {
 		row := wikiFinalizeRow{FolderIDs: uniqueWikiFolderIDs(folderIDs)}
+		langfuse.InjectTracing(ctx, &row)
 		if b, err := json.Marshal(row); err == nil {
 			if s.enqueueFinalizeRow(ctx, &types.TaskPendingOp{
 				TenantID: payload.TenantID,
@@ -1130,6 +1137,53 @@ func (s *wikiIngestService) decodePendingRows(ctx context.Context, rows []*types
 		ops = append(ops, reversedUnique[i])
 	}
 	return ops, peekedIDs
+}
+
+func contextWithWikiPendingRequestGroup(
+	ctx context.Context, ops []WikiPendingOp,
+) (context.Context, error) {
+	groups := make([]string, 0, len(ops))
+	for _, op := range ops {
+		groups = append(groups, op.RequestGroupID)
+	}
+	return contextWithSingleWikiRequestGroup(ctx, groups)
+}
+
+func contextWithWikiFinalizeRequestGroup(
+	ctx context.Context, rows []*types.TaskPendingOp,
+) (context.Context, error) {
+	groups := make([]string, 0, len(rows))
+	for _, pending := range rows {
+		if pending == nil || len(pending.Payload) == 0 {
+			continue
+		}
+		var row wikiFinalizeRow
+		if err := json.Unmarshal(pending.Payload, &row); err != nil {
+			continue
+		}
+		groups = append(groups, row.RequestGroupID)
+	}
+	return contextWithSingleWikiRequestGroup(ctx, groups)
+}
+
+func contextWithSingleWikiRequestGroup(
+	ctx context.Context, groups []string,
+) (context.Context, error) {
+	group := ""
+	for _, candidate := range groups {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if group != "" && candidate != group {
+			return ctx, fmt.Errorf("wiki pending batch contains inconsistent request groups %q and %q", group, candidate)
+		}
+		group = candidate
+	}
+	if group == "" {
+		return ctx, nil
+	}
+	return types.WithRequestGroupID(ctx, group), nil
 }
 
 // trimPendingList deletes consumed rows from task_pending_ops. Empty

@@ -258,7 +258,15 @@ type QAPair struct {
 
 任务运行期间可轮询该接口获取 `finished / total` 进度；`status = 3` 时 `err_msg` 携带失败原因。
 
-> **注意**：评估结果存储在**内存**（`evaluationMemoryStorage`：`map[string]*EvaluationDetail` + `sync.RWMutex`，见 `internal/application/service/evaluation.go`），服务重启后任务与结果会丢失，需重新发起评估。
+评估运行、配置快照和结果保存在数据库中。服务重启后，已完成记录仍可查询；运行中的任务会标记为已中断，遗留的临时评估知识库会在启动恢复阶段清理。
+
+## Wiki 评测
+
+评测中心包含“RAG 问答评测”和“Wiki 评测”两个页签。Wiki 评测首期使用带人工 Gold 的 EnterpriseRAG 数据集：系统创建独立临时知识库，导入 85 篇语料，通过所选 Chat 模型生成 Wiki，再冻结实体页、概念页及页面链接进行评分。该功能仅由用户主动运行，不属于 CI 或发布门禁。
+
+Wiki 评测提供四组核心指标：实体覆盖率、概念覆盖率、总体覆盖率和有向图边 Precision/Recall/F1。节点先进行类型约束的名称/别名精确匹配，剩余节点再通过所选 Embedding 模型做一对一语义匹配。图指标只比较已匹配节点构成的诱导子图，避免对缺失节点重复扣分。评分阶段不调用 Chat 模型。
+
+详情页保留每个 Gold 节点的匹配方式、语义分数或未匹配原因，以及正确、缺失、多余和未评分链接。JSON 与 Markdown 报告从同一份持久化结果生成，因此临时知识库清理后仍可下载。
 
 ## 实现参考
 
@@ -267,10 +275,12 @@ type QAPair struct {
 | 层 | 文件 |
 | --- | --- |
 | HTTP Handler | `internal/handler/evaluation.go` |
+| Wiki HTTP Handler | `internal/handler/wiki_evaluation.go` |
 | 评估服务 | `internal/application/service/evaluation.go` |
+| Wiki 评测协调与评分 | `internal/application/service/wiki_evaluation*.go` |
 | 指标注册与汇聚 | `internal/application/service/metric_hook.go` |
 | 指标实现 | `internal/application/service/metric/`（`precision.go`、`recall.go`、`ndcg.go`、`mrr.go`、`map.go`、`bleu.go`、`rouge.go`、`rouge_score.go`、`common.go`） |
 | 数据集加载 | `internal/application/service/dataset.go`、`internal/handler/dataset.go` |
-| 类型定义 | `internal/types/evaluation.go`、`internal/types/dataset.go` |
+| 类型定义 | `internal/types/evaluation.go`、`internal/types/wiki_evaluation.go`、`internal/types/dataset.go` |
 | 内置样例数据集 | `dataset/samples/`（Parquet 文件） |
 | 路由注册 | `internal/router/router.go` 的 `RegisterEvaluationRoutes` |

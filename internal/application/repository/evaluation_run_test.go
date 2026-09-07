@@ -414,3 +414,21 @@ func TestEvaluationRun_MarkStaleInterrupted(t *testing.T) {
 		})
 	}
 }
+
+func TestEvaluationRun_MarkStaleInterruptedPreservesFailureReason(t *testing.T) {
+	db := setupEvaluationRunTestDB(t)
+	repo := NewEvaluationRunRepository(db)
+	now := time.Now()
+	run := newTestEvaluationRun("cleanup-stale", 1, types.EvaluationStatueRunning, now.Add(-time.Hour))
+	run.ErrMsg = "generation failed; cleanup: temporary backend unavailable"
+	require.NoError(t, repo.Create(evaluationRunCtx(1), run))
+
+	affected, err := repo.MarkStaleInterrupted(evaluationRunCtx(1), now.Add(-time.Minute))
+	require.NoError(t, err)
+	require.Equal(t, int64(1), affected)
+
+	got, err := repo.GetByID(evaluationRunCtx(1), 1, run.ID)
+	require.NoError(t, err)
+	assert.Equal(t, types.EvaluationStatueInterrupted, got.Status)
+	assert.Equal(t, run.ErrMsg, got.ErrMsg)
+}

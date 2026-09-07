@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
@@ -87,4 +89,18 @@ func TestWikiGoldDecodeRoundTrip(t *testing.T) {
 	decoded, err := decodeWikiGold(raw)
 	require.NoError(t, err)
 	require.NoError(t, validateWikiGold(decoded, dataset))
+}
+
+func TestWikiGoldFixture(t *testing.T) {
+	oldRoot := datasetRoot
+	datasetRoot = filepath.Join("..", "..", "..", "dataset")
+	t.Cleanup(func() { datasetRoot = oldRoot })
+	dataset, err := NewDatasetService().GetDatasetByID(context.Background(), "enterprise_rag")
+	require.NoError(t, err)
+	gold, err := NewWikiGoldLoader().Load(context.Background(), dataset)
+	require.NoError(t, err)
+	require.Equal(t, "1", gold.SchemaVersion)
+	require.Equal(t, dataset.SHA256, gold.DatasetSHA256)
+	require.Len(t, gold.Nodes, 40)
+	require.Len(t, gold.Edges, 20)
 }

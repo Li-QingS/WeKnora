@@ -365,8 +365,11 @@ func (r *evaluationRunRepository) MarkStaleInterrupted(
 		Updates(map[string]interface{}{
 			"status":      types.EvaluationStatueInterrupted,
 			"finished_at": &now,
-			"err_msg":     "interrupted by service restart",
-			"updated_at":  now,
+			"err_msg": gorm.Expr(
+				"CASE WHEN err_msg = '' THEN ? ELSE err_msg END",
+				"interrupted by service restart",
+			),
+			"updated_at": now,
 		})
 	if res.Error != nil {
 		return 0, res.Error

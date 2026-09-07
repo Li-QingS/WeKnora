@@ -376,6 +376,11 @@ func (s *wikiIngestService) ProcessWikiIngest(ctx context.Context, t *asynq.Task
 		followUpScheduled = s.scheduleStaleClaimRecheck(ctx, payload)
 		return nil
 	}
+	ctx, err = contextWithWikiPendingRequestGroup(ctx, pendingOps)
+	if err != nil {
+		exitStatus = "inconsistent_request_group"
+		return err
+	}
 
 	logger.Infof(ctx, "wiki ingest: batch processing %d ops for KB %s", len(pendingOps), payload.KnowledgeBaseID)
 
@@ -978,6 +983,10 @@ func (s *wikiIngestService) ProcessWikiFinalize(ctx context.Context, t *asynq.Ta
 	}
 	if len(rows) == 0 {
 		return nil
+	}
+	ctx, err = contextWithWikiFinalizeRequestGroup(ctx, rows)
+	if err != nil {
+		return err
 	}
 
 	kb, err := s.kbService.GetKnowledgeBaseByIDOnly(ctx, payload.KnowledgeBaseID)

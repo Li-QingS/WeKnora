@@ -1,6 +1,9 @@
 package types
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 const DefaultWikiSemanticThreshold = 0.80
 
@@ -18,10 +21,33 @@ func (f EvaluationReportFormat) IsValid() bool {
 
 // WikiEvaluationOptions carries all inputs accepted by the Wiki evaluation API.
 type WikiEvaluationOptions struct {
-	DatasetID         string  `json:"dataset_id"`
-	ChatModelID       string  `json:"chat_id"`
-	EmbeddingModelID  string  `json:"embedding_id"`
-	SemanticThreshold float64 `json:"semantic_threshold"`
+	DatasetID                 string  `json:"dataset_id"`
+	ChatModelID               string  `json:"chat_id"`
+	EmbeddingModelID          string  `json:"embedding_id"`
+	SemanticThreshold         float64 `json:"semantic_threshold"`
+	SemanticThresholdProvided bool    `json:"-"`
+}
+
+func (o *WikiEvaluationOptions) UnmarshalJSON(data []byte) error {
+	var payload struct {
+		DatasetID         string   `json:"dataset_id"`
+		ChatModelID       string   `json:"chat_id"`
+		EmbeddingModelID  string   `json:"embedding_id"`
+		SemanticThreshold *float64 `json:"semantic_threshold"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	o.DatasetID = payload.DatasetID
+	o.ChatModelID = payload.ChatModelID
+	o.EmbeddingModelID = payload.EmbeddingModelID
+	o.SemanticThresholdProvided = payload.SemanticThreshold != nil
+	if payload.SemanticThreshold == nil {
+		o.SemanticThreshold = 0
+	} else {
+		o.SemanticThreshold = *payload.SemanticThreshold
+	}
+	return nil
 }
 
 // WikiGold is the versioned reference node/link graph for one dataset.

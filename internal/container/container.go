@@ -6,6 +6,7 @@ package container
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -222,6 +223,54 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewModelCallService))
 	must(container.Provide(service.NewDatasetService))
 	must(container.Provide(service.NewEvaluationService))
+	must(container.Provide(func() interfaces.WikiGoldLoader {
+		return service.NewWikiGoldLoader()
+	}))
+	must(container.Provide(func(knowledge interfaces.KnowledgeService) (interfaces.TitledPassageKnowledgeCreator, error) {
+		creator, ok := knowledge.(interfaces.TitledPassageKnowledgeCreator)
+		if !ok {
+			return nil, fmt.Errorf("knowledge service does not support titled passage creation")
+		}
+		return creator, nil
+	}))
+	must(container.Provide(func(creator interfaces.TitledPassageKnowledgeCreator) interfaces.WikiCorpusImporter {
+		return service.NewWikiCorpusImporter(creator)
+	}))
+	must(container.Provide(func(
+		knowledge interfaces.KnowledgeService,
+		pending interfaces.TaskPendingOpsRepository,
+		deadLetters interfaces.TaskDeadLetterRepository,
+	) interfaces.WikiGenerationMonitor {
+		return service.NewWikiGenerationMonitor(knowledge, pending, deadLetters)
+	}))
+	must(container.Provide(func(pages interfaces.WikiPageService) interfaces.WikiPageFreezer {
+		return service.NewWikiPageFreezer(pages)
+	}))
+	must(container.Provide(func(models interfaces.ModelService) interfaces.WikiEmbeddingProvider {
+		return service.NewWikiEmbeddingProvider(models)
+	}))
+	must(container.Provide(service.NewWikiEvaluationScorer))
+	must(container.Provide(func() interfaces.WikiEvaluationReportRenderer {
+		return service.NewWikiEvaluationReportRenderer()
+	}))
+	must(container.Provide(func(
+		datasets interfaces.DatasetService,
+		gold interfaces.WikiGoldLoader,
+		models interfaces.ModelService,
+		knowledge interfaces.KnowledgeBaseService,
+		importer interfaces.WikiCorpusImporter,
+		monitor interfaces.WikiGenerationMonitor,
+		freezer interfaces.WikiPageFreezer,
+		scorer interfaces.WikiEvaluationScorer,
+		reports interfaces.WikiEvaluationReportRenderer,
+		runs interfaces.EvaluationRunRepository,
+		modelCalls interfaces.ModelCallRepository,
+	) interfaces.WikiEvaluationService {
+		return service.NewWikiEvaluationService(
+			datasets, gold, models, knowledge, importer, monitor, freezer,
+			scorer, reports, runs, modelCalls,
+		)
+	}))
 	must(container.Provide(service.NewUserService))
 	must(container.Provide(service.NewSystemSettingService))
 	must(container.Provide(func(
@@ -420,6 +469,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	must(container.Provide(handler.NewMeEnvVarHandler))
 	must(container.Provide(handler.NewEvaluationHandler))
+	must(container.Provide(handler.NewWikiEvaluationHandler))
 	must(container.Provide(handler.NewInitializationHandler))
 	must(container.Provide(handler.NewAuthHandler))
 	must(container.Provide(handler.NewSystemHandler))
@@ -848,11 +898,14 @@ func cleanupStaleEvaluationKnowledgeBases(
 ) {
 	ctx := context.Background()
 	var runs []struct {
-		TenantID      uint64
-		TemporaryKBID string
+		TenantID       uint64
+		TemporaryKBID  string
+		EvaluationType types.EvaluationType
+		FailureStage   types.EvaluationStage
+		ResultDetail   json.RawMessage
 	}
 	if err := db.Model(&types.EvaluationRun{}).
-		Select("tenant_id", "temporary_kb_id").
+		Select("tenant_id", "temporary_kb_id", "evaluation_type", "failure_stage", "result_detail").
 		Where("status = ? AND temporary_kb_id <> ''", types.EvaluationStatueInterrupted).
 		Find(&runs).Error; err != nil {
 		logger.Warnf(ctx, "Failed to list interrupted evaluation runs for KB cleanup: %v", err)
@@ -876,7 +929,30 @@ func cleanupStaleEvaluationKnowledgeBases(
 			logger.Warnf(ctx, "Failed to check stale evaluation KB %s: %v", run.TemporaryKBID, err)
 			continue
 		}
+		finalizeRecoveredRun := func() {
+			status, ok := recoveredWikiTerminalStatus(run.EvaluationType, run.FailureStage, run.ResultDetail)
+			if !ok {
+				return
+			}
+			now := time.Now()
+			updates := map[string]interface{}{
+				"status":      status,
+				"stage":       types.EvaluationStageCompleted,
+				"finished_at": now,
+				"updated_at":  now,
+			}
+			if status == types.EvaluationStatueSuccess {
+				updates["err_msg"] = ""
+			}
+			if err := db.Model(&types.EvaluationRun{}).
+				Where("tenant_id = ? AND temporary_kb_id = ? AND status = ?",
+					run.TenantID, run.TemporaryKBID, types.EvaluationStatueInterrupted).
+				Updates(updates).Error; err != nil {
+				logger.Warnf(ctx, "Failed to finalize recovered Wiki evaluation for KB %s: %v", run.TemporaryKBID, err)
+			}
+		}
 		if active == 0 {
+			finalizeRecoveredRun()
 			continue
 		}
 
@@ -891,9 +967,30 @@ func cleanupStaleEvaluationKnowledgeBases(
 		if err := knowledgeBaseService.DeleteKnowledgeBase(cleanupCtx, run.TemporaryKBID); err != nil &&
 			!errors.Is(err, repository.ErrKnowledgeBaseNotFound) {
 			logger.Warnf(ctx, "Failed to cleanup stale evaluation KB %s: %v", run.TemporaryKBID, err)
+			cancel()
+			continue
 		}
+		finalizeRecoveredRun()
 		cancel()
 	}
+}
+
+func recoveredWikiTerminalStatus(
+	evaluationType types.EvaluationType,
+	failureStage types.EvaluationStage,
+	resultDetail json.RawMessage,
+) (types.EvaluationStatue, bool) {
+	if evaluationType != types.EvaluationTypeWiki {
+		return types.EvaluationStatueInterrupted, false
+	}
+	if failureStage != "" {
+		return types.EvaluationStatueFailed, true
+	}
+	result := strings.TrimSpace(string(resultDetail))
+	if result != "" && result != "null" && result != "{}" {
+		return types.EvaluationStatueSuccess, true
+	}
+	return types.EvaluationStatueInterrupted, false
 }
 
 // resolveStorageProviderPending replaces the "__pending_env__" sentinel in

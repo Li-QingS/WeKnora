@@ -7,6 +7,13 @@
       </div>
     </div>
 
+    <t-tabs v-model="activeEvaluator" class="evaluation-tabs">
+      <t-tab-panel value="rag" label="RAG 问答评测" />
+      <t-tab-panel value="wiki" label="Wiki 评测" />
+    </t-tabs>
+
+    <div v-show="activeEvaluator === 'rag'" class="evaluation-panel">
+
     <div class="evaluation-run settings-group">
       <div class="evaluation-run__head">
         <div>
@@ -355,6 +362,9 @@
         </div>
       </t-loading>
     </div>
+	</div>
+
+	<WikiEvaluationPanel v-show="activeEvaluator === 'wiki'" :can-run="canRun" class="evaluation-panel" />
   </div>
 </template>
 
@@ -375,8 +385,10 @@ import {
   type StartEvaluationRequest,
 } from '@/api/evaluation'
 import { useAuthStore } from '@/stores/auth'
+import WikiEvaluationPanel from './WikiEvaluationPanel.vue'
 
 const authStore = useAuthStore()
+const activeEvaluator = ref<'rag' | 'wiki'>('rag')
 
 const runs = ref<EvaluationRun[]>([])
 const total = ref(0)

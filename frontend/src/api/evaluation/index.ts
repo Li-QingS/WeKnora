@@ -1,4 +1,4 @@
-import { del, get, post } from '../../utils/request'
+import { del, get, getDown, post } from '../../utils/request'
 
 export interface EvaluationMetric {
   retrieval_metrics: Record<string, number>
@@ -145,4 +145,129 @@ export function deleteEvaluationRun(taskId: string): Promise<void> {
       .then(() => resolve())
       .catch(reject)
   })
+}
+
+export interface WikiNodeMetric {
+  gold_total: number
+  exact_matched: number
+  semantic_matched: number
+  unmatched: number
+  coverage: number
+}
+
+export interface WikiGraphMetric {
+  correct: number
+  missing: number
+  extra: number
+  precision: number
+  recall: number
+  f1: number
+  scorable: boolean
+  note?: string
+}
+
+export interface WikiEvaluationMetric {
+  entity: WikiNodeMetric
+  concept: WikiNodeMetric
+  overall: WikiNodeMetric
+  graph: WikiGraphMetric
+  generation_cost?: EvaluationMetric['cost_metrics']
+  scoring_cost?: EvaluationMetric['cost_metrics']
+}
+
+export interface WikiNodeMatch {
+  gold_node_id: string
+  gold_type: string
+  gold_name: string
+  page_slug?: string
+  page_title?: string
+  method: 'exact' | 'semantic' | 'unmatched'
+  score?: number
+  reason?: string
+}
+
+export interface WikiEdgeRef {
+  source: string
+  target: string
+  reason?: string
+}
+
+export interface WikiEvaluationRun extends EvaluationRun {
+  evaluation_type: 'wiki'
+  stage?: string
+  failure_stage?: string
+  stage_progress?: { current?: number; total?: number; message?: string }
+}
+
+export interface WikiEvaluationDetail {
+  run: WikiEvaluationRun
+  params?: {
+    dataset_id: string
+    chat_id: string
+    embedding_id: string
+    semantic_threshold: number
+  }
+  metric?: WikiEvaluationMetric
+  result?: {
+    metric: WikiEvaluationMetric
+    node_matches: WikiNodeMatch[]
+    correct_edges: WikiEdgeRef[]
+    missing_edges: WikiEdgeRef[]
+    extra_edges: WikiEdgeRef[]
+    unscored_edges: WikiEdgeRef[]
+  }
+}
+
+export interface WikiEvaluationDatasetOption {
+  id: string
+  sha256: string
+  document_count: number
+  gold: {
+    schema_version: string
+    dataset_sha256: string
+    content_sha256: string
+    node_count: number
+    edge_count: number
+  }
+}
+
+export interface StartWikiEvaluationRequest {
+  dataset_id: string
+  chat_id: string
+  embedding_id: string
+  semantic_threshold: number
+}
+
+export async function listWikiEvaluationRuns(
+  page: number,
+  pageSize: number,
+  status?: number,
+): Promise<{ data: WikiEvaluationRun[]; total: number }> {
+  const params: Record<string, unknown> = { page, page_size: pageSize }
+  if (status !== undefined) params.status = status
+  const response: any = await get('/api/v1/evaluation/wiki/runs', { params })
+  return { data: response.data || [], total: response.total || 0 }
+}
+
+export async function listWikiEvaluationDatasets(): Promise<WikiEvaluationDatasetOption[]> {
+  const response: any = await get('/api/v1/evaluation/wiki/datasets')
+  return response.data || []
+}
+
+export async function startWikiEvaluation(payload: StartWikiEvaluationRequest): Promise<WikiEvaluationDetail> {
+  const response: any = await post('/api/v1/evaluation/wiki/runs', payload)
+  return response.data
+}
+
+export async function getWikiEvaluation(runId: string): Promise<WikiEvaluationDetail> {
+  const response: any = await get(`/api/v1/evaluation/wiki/runs/${encodeURIComponent(runId)}`)
+  return response.data
+}
+
+export async function deleteWikiEvaluation(runId: string): Promise<void> {
+  await del(`/api/v1/evaluation/wiki/runs/${encodeURIComponent(runId)}`)
+}
+
+export function downloadWikiEvaluationReport(runId: string, format: 'json' | 'markdown'): Promise<Blob> {
+  return getDown(`/api/v1/evaluation/wiki/runs/${encodeURIComponent(runId)}/report?format=${format}`)
 }
