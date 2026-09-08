@@ -1,0 +1,112 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-09-08T14:20:30Z",
+  "commit": "2390c6748ea9",
+  "fixture": "evaluation/parser_benchmark/fixture.pdf",
+  "fixture_sha256": "db9a3e681fb48d49a1d3c7cc286f84c2f5476b86ddc88f5a70a0e5d80a5b1123",
+  "gold": "evaluation/parser_benchmark/gold.json",
+  "formula": "quality_score = 0.8 * content_recall + 0.2 * structure_recall; unavailable/unsupported/failed scores are null",
+  "engines": [
+    {
+      "engine": "builtin",
+      "available": true,
+      "supported": true,
+      "status": "success",
+      "duration_ms": 1872,
+      "content_hits": 16,
+      "content_total": 16,
+      "structure_hits": 1,
+      "structure_total": 5,
+      "content_recall": 1,
+      "structure_recall": 0.2,
+      "quality_score": 0.8400000000000001,
+      "output_bytes": 477,
+      "output_sha256": "8671bbabb963cbca68744df6f65b2f9a36b7067437dd488e3c6b15fb298dbcdf",
+      "raw_output": "raw-builtin.md"
+    },
+    {
+      "engine": "simple",
+      "available": true,
+      "supported": false,
+      "status": "unsupported",
+      "reason": "engine does not declare PDF support",
+      "duration_ms": 0,
+      "content_recall": null,
+      "structure_recall": null,
+      "quality_score": null
+    },
+    {
+      "engine": "anydoc",
+      "available": true,
+      "supported": true,
+      "status": "success",
+      "duration_ms": 5,
+      "content_hits": 16,
+      "content_total": 16,
+      "structure_hits": 5,
+      "structure_total": 5,
+      "content_recall": 1,
+      "structure_recall": 1,
+      "quality_score": 1,
+      "output_bytes": 515,
+      "output_sha256": "bd468310f7bc9e8a3f65911291b6f027eb0aaba7226e1817fd31371887102687",
+      "raw_output": "raw-anydoc.md",
+      "parser_metadata_name": "anydoc"
+    },
+    {
+      "engine": "weknoracloud",
+      "available": false,
+      "supported": true,
+      "status": "unavailable",
+      "reason": "WeKnora Cloud credentials not configured. Go to Settings → WeKnora Cloud to set up.",
+      "duration_ms": 0,
+      "content_recall": null,
+      "structure_recall": null,
+      "quality_score": null
+    },
+    {
+      "engine": "mineru",
+      "available": false,
+      "supported": true,
+      "status": "unavailable",
+      "reason": "MinerU service not configured",
+      "duration_ms": 0,
+      "content_recall": null,
+      "structure_recall": null,
+      "quality_score": null
+    },
+    {
+      "engine": "mineru_cloud",
+      "available": false,
+      "supported": true,
+      "status": "unavailable",
+      "reason": "MinerU API Key not configured",
+      "duration_ms": 0,
+      "content_recall": null,
+      "structure_recall": null,
+      "quality_score": null
+    },
+    {
+      "engine": "paddleocr_vl",
+      "available": false,
+      "supported": true,
+      "status": "unavailable",
+      "reason": "PaddleOCR-VL service not configured",
+      "duration_ms": 0,
+      "content_recall": null,
+      "structure_recall": null,
+      "quality_score": null
+    },
+    {
+      "engine": "paddleocr_vl_cloud",
+      "available": false,
+      "supported": true,
+      "status": "unavailable",
+      "reason": "PaddleOCR-VL Cloud Token not configured",
+      "duration_ms": 0,
+      "content_recall": null,
+      "structure_recall": null,
+      "quality_score": null
+    }
+  ]
+}

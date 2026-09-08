@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "fixture": "evaluation/parser_benchmark/fixture.pdf",
+  "fixture_sha256": "db9a3e681fb48d49a1d3c7cc286f84c2f5476b86ddc88f5a70a0e5d80a5b1123",
+  "content_phrases": [
+    "Parser Benchmark Quarterly Report",
+    "ORBIT-7294",
+    "Mira Chen",
+    "eu-west-3",
+    "17 minutes",
+    "USD 48250",
+    "2026-09-15",
+    "ALPHA-8821",
+    "Atlas response team",
+    "Latency",
+    "250 ms",
+    "212 ms",
+    "Recall",
+    "0.88",
+    "0.91",
+    "byte-for-byte identifiable"
+  ],
+  "structure_checks": [
+    {
+      "name": "title_heading",
+      "pattern": "(?im)^#{1,6}\\s+Parser Benchmark Quarterly Report\\s*$"
+    },
+    {
+      "name": "release_heading",
+      "pattern": "(?im)^#{1,6}\\s+Release checklist\\s*$"
+    },
+    {
+      "name": "ordered_list",
+      "pattern": "(?m)^\\s*(?:1[.)]|[-*+])\\s+Freeze changes on 2026-09-15\\.?\\s*$"
+    },
+    {
+      "name": "markdown_table",
+      "pattern": "(?m)^\\s*\\|?.*Metric.*\\|.*Target.*\\|.*Actual.*\\|?\\s*$"
+    },
+    {
+      "name": "conclusion_heading",
+      "pattern": "(?im)^#{1,6}\\s+Conclusion\\s*$"
+    }
+  ]
+}

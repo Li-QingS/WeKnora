@@ -1,0 +1,9 @@
+engine,status,available,supported,duration_ms,content_recall,structure_recall,quality_score,output_sha256,reason
+builtin,success,true,true,1872,1.000000,0.200000,0.840000,8671bbabb963cbca68744df6f65b2f9a36b7067437dd488e3c6b15fb298dbcdf,
+simple,unsupported,true,false,0,,,,,engine does not declare PDF support
+anydoc,success,true,true,5,1.000000,1.000000,1.000000,bd468310f7bc9e8a3f65911291b6f027eb0aaba7226e1817fd31371887102687,
+weknoracloud,unavailable,false,true,0,,,,,WeKnora Cloud credentials not configured. Go to Settings → WeKnora Cloud to set up.
+mineru,unavailable,false,true,0,,,,,MinerU service not configured
+mineru_cloud,unavailable,false,true,0,,,,,MinerU API Key not configured
+paddleocr_vl,unavailable,false,true,0,,,,,PaddleOCR-VL service not configured
+paddleocr_vl_cloud,unavailable,false,true,0,,,,,PaddleOCR-VL Cloud Token not configured

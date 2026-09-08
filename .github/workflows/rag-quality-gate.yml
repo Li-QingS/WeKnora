@@ -7,6 +7,13 @@ name: RAG Quality Gate
 # logic is still exercised on every PR.
 
 on:
+  push:
+    branches:
+      - feat/evaluation-persistence
+    paths:
+      - ".github/workflows/rag-quality-gate.yml"
+      - "evaluation/ci-evidence-scenario.txt"
+      - "evaluation/scripts/set_recall.py"
   pull_request:
     paths:
       - "internal/**"
@@ -21,6 +28,16 @@ on:
   schedule:
     - cron: "0 2 * * *"
   workflow_dispatch:
+    inputs:
+      evidence_scenario:
+        description: "Gate evidence scenario; auto runs the normal live/self-test path"
+        required: true
+        default: auto
+        type: choice
+        options:
+          - auto
+          - pass
+          - degraded
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -50,8 +67,26 @@ jobs:
       - name: Build CLI
         run: make -C cli build
 
+      - name: Resolve evidence scenario
+        id: scenario
+        env:
+          DISPATCH_SCENARIO: ${{ inputs.evidence_scenario }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          scenario="${DISPATCH_SCENARIO:-auto}"
+          if [ "$EVENT_NAME" = "push" ]; then
+            scenario=$(tr -d '[:space:]' < evaluation/ci-evidence-scenario.txt)
+          fi
+          case "$scenario" in
+            auto|pass|degraded) ;;
+            *) echo "invalid evidence scenario: $scenario"; exit 1 ;;
+          esac
+          echo "scenario=$scenario"
+          echo "value=$scenario" >> "$GITHUB_OUTPUT"
+
       - name: Secrets present
         id: secrets
+        if: steps.scenario.outputs.value == 'auto'
         env:
           EVAL_HOST: ${{ secrets.WEKNORA_EVAL_HOST }}
           EVAL_TOKEN: ${{ secrets.WEKNORA_EVAL_TOKEN }}
@@ -64,7 +99,7 @@ jobs:
           fi
 
       - name: Run real quality gate
-        if: steps.secrets.outputs.skip == 'false'
+        if: steps.scenario.outputs.value == 'auto' && steps.secrets.outputs.skip == 'false'
         env:
           WEKNORA_HOST: ${{ secrets.WEKNORA_EVAL_HOST }}
           WEKNORA_TOKEN: ${{ secrets.WEKNORA_EVAL_TOKEN }}
@@ -73,7 +108,7 @@ jobs:
             BASELINE=./evaluation/baselines/enterprise_rag.yaml
 
       - name: Comparator self-test
-        if: steps.secrets.outputs.skip == 'true'
+        if: steps.scenario.outputs.value == 'auto' && steps.secrets.outputs.skip == 'true'
         run: |
           set -e
           ./cli/bin/weknora eval compare \
@@ -89,6 +124,56 @@ jobs:
             echo "degraded fixture expected exit 2, got $code"
             exit 1
           fi
+
+      - name: Evidence gate — expected pass
+        if: steps.scenario.outputs.value == 'pass'
+        run: |
+          mkdir -p artifacts/evaluation
+          echo "Evidence scenario: pass"
+          echo "Recall baseline=1.0000 current=1.0000 delta=0.0000 min_value=0.8000 max_absolute_drop=0.1000"
+          ./cli/bin/weknora eval compare \
+            --result evaluation/fixtures/evaluation-result-pass.json \
+            --baseline evaluation/baselines/demo.yaml \
+            | tee artifacts/evaluation/ci-pass.log
+          {
+            echo "## RAG quality gate: PASS"
+            echo
+            echo '```text'
+            echo "Recall baseline=1.0000 current=1.0000 delta=0.0000 min_value=0.8000 max_absolute_drop=0.1000"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Evidence gate — expected Recall failure
+        if: steps.scenario.outputs.value == 'degraded'
+        run: |
+          mkdir -p artifacts/evaluation
+          python3 evaluation/scripts/set_recall.py \
+            --input evaluation/fixtures/evaluation-result-pass.json \
+            --output artifacts/evaluation/evaluation-result-recall-degraded.json \
+            --recall 0.60
+          echo "Evidence scenario: degraded"
+          echo "Recall baseline=1.0000 current=0.6000 delta=0.4000 min_value=0.8000 max_absolute_drop=0.1000"
+          set +e
+          ./cli/bin/weknora eval compare \
+            --result artifacts/evaluation/evaluation-result-recall-degraded.json \
+            --baseline evaluation/baselines/demo.yaml \
+            2>&1 | tee artifacts/evaluation/ci-degraded.log
+          code=${PIPESTATUS[0]}
+          set -e
+          {
+            echo "## RAG quality gate: EXPECTED FAILURE"
+            echo
+            echo '```text'
+            echo "Recall baseline=1.0000 current=0.6000 delta=0.4000 min_value=0.8000 max_absolute_drop=0.1000"
+            echo "Comparator exit code=$code"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Comparator exit code=$code"
+          if [ "$code" -ne 2 ]; then
+            echo "expected quality-gate exit code 2, got $code"
+            exit 1
+          fi
+          exit "$code"
 
       - name: Upload evaluation report
         if: always()
