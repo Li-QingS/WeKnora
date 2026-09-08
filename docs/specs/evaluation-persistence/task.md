@@ -10,8 +10,8 @@
 | 新建 | `internal/buildinfo/buildinfo.go` | Version/CommitID/GitDirty/GoVersion 注入变量 |
 | 修改 | `scripts/get_version.sh` | 增加 GIT_DIRTY 输出 |
 | 修改 | `Makefile` | ldflags 增加 buildinfo.* 注入 |
-| 修改 | `migrations/versioned/000088_evaluation_runs.{up,down}.sql` | +5 列 |
-| 修改 | `migrations/sqlite/000013_evaluation_runs.{up,down}.sql` | 同步 +5 列 |
+| 修改 | `migrations/versioned/000092_evaluation_runs.{up,down}.sql` | +5 列 |
+| 修改 | `migrations/sqlite/000014_evaluation_runs.{up,down}.sql` | 同步 +5 列 |
 | 修改 | `internal/database/migration_sqlite_versioned_schema_test.go` | 守卫测试登记表 |
 | 修改 | `internal/types/evaluation.go` | EvaluationRun 模型、Interrupted 状态、Snapshot 类型 |
 | 修改 | `internal/types/interfaces/evaluation.go` | Repository 接口 + 服务 List 方法 |
@@ -77,10 +77,10 @@
 
 ## T6：迁移与守卫测试
 
-**文件：** `migrations/versioned/000088_evaluation_runs.{up,down}.sql`、`migrations/sqlite/000013_evaluation_runs.{up,down}.sql`、`internal/database/migration_sqlite_versioned_schema_test.go`
+**文件：** `migrations/versioned/000092_evaluation_runs.{up,down}.sql`、`migrations/sqlite/000014_evaluation_runs.{up,down}.sql`、`internal/database/migration_sqlite_versioned_schema_test.go`
 **依赖：** T2（列名以模型为准）
 **步骤：**
-1. PG 000088 up 加 5 列、down 加对应 DROP COLUMN；SQLite 000013 同步
+1. PG 000092 up 加 5 列、down 加对应 DROP COLUMN；SQLite 000014 同步
 2. 守卫测试 `versionedSQLiteColumns` 登记 `evaluation_runs` 的 5 个新列（版本号预期保持 13/88 不变）
 
 **验证：** `go test ./internal/database/ -v` 全过（含升级路径测试）

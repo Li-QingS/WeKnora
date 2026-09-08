@@ -23,6 +23,10 @@ const (
 	wikiEvaluationCleanupTimeout = 2 * time.Minute
 )
 
+// ErrInvalidWikiEvaluationParams identifies caller-correctable Wiki
+// evaluation configuration errors for the HTTP layer.
+var ErrInvalidWikiEvaluationParams = errors.New("invalid wiki evaluation parameters")
+
 type WikiEvaluationService struct {
 	datasets   interfaces.DatasetService
 	gold       interfaces.WikiGoldLoader
@@ -470,20 +474,20 @@ func (s *WikiEvaluationService) validateDependencies() error {
 
 func normalizeWikiEvaluationOptions(opts *types.WikiEvaluationOptions) (*types.WikiEvaluationOptions, error) {
 	if opts == nil {
-		return nil, fmt.Errorf("wiki evaluation options are required")
+		return nil, fmt.Errorf("%w: options are required", ErrInvalidWikiEvaluationParams)
 	}
 	copy := *opts
 	copy.DatasetID = strings.TrimSpace(copy.DatasetID)
 	copy.ChatModelID = strings.TrimSpace(copy.ChatModelID)
 	copy.EmbeddingModelID = strings.TrimSpace(copy.EmbeddingModelID)
 	if copy.DatasetID == "" || copy.ChatModelID == "" || copy.EmbeddingModelID == "" {
-		return nil, fmt.Errorf("dataset_id, chat_id, and embedding_id are required")
+		return nil, fmt.Errorf("%w: dataset_id, chat_id, and embedding_id are required", ErrInvalidWikiEvaluationParams)
 	}
 	if copy.SemanticThreshold == 0 && !copy.SemanticThresholdProvided {
 		copy.SemanticThreshold = types.DefaultWikiSemanticThreshold
 	}
 	if copy.SemanticThreshold < 0 || copy.SemanticThreshold > 1 {
-		return nil, fmt.Errorf("semantic_threshold must be in [0,1]")
+		return nil, fmt.Errorf("%w: semantic_threshold must be in [0,1]", ErrInvalidWikiEvaluationParams)
 	}
 	return &copy, nil
 }
@@ -493,13 +497,16 @@ func (s *WikiEvaluationService) resolveModelSnapshot(
 ) (types.ModelSnapshot, error) {
 	model, err := s.models.GetModelByID(ctx, id)
 	if err != nil {
+		if errors.Is(err, ErrModelNotFound) {
+			return types.ModelSnapshot{}, fmt.Errorf("%w: model %q was not found", ErrInvalidWikiEvaluationParams, id)
+		}
 		return types.ModelSnapshot{}, fmt.Errorf("resolve model %q: %w", id, err)
 	}
 	if model == nil || model.Type != expected {
-		return types.ModelSnapshot{}, fmt.Errorf("model %q is not a %s model", id, expected)
+		return types.ModelSnapshot{}, fmt.Errorf("%w: model %q is not a %s model", ErrInvalidWikiEvaluationParams, id, expected)
 	}
 	if model.Status != "" && model.Status != types.ModelStatusActive {
-		return types.ModelSnapshot{}, fmt.Errorf("model %q is not active", id)
+		return types.ModelSnapshot{}, fmt.Errorf("%w: model %q is not active", ErrInvalidWikiEvaluationParams, id)
 	}
 	return types.ModelSnapshot{
 		ID: model.ID, Name: model.Name, Provider: model.Parameters.Provider, Type: string(model.Type),

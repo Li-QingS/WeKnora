@@ -29,7 +29,7 @@
             <t-input-number v-model="form.threshold" :min="0" :max="1" :step="0.01" :decimal-places="2" />
           </div>
           <div class="wiki-actions">
-            <t-button theme="primary" :disabled="!canRun" :loading="starting || polling" @click="start">
+            <t-button theme="primary" :disabled="!canStart" :loading="starting || polling" @click="start">
               {{ polling ? 'Wiki 评测进行中' : '开始 Wiki 评测' }}
             </t-button>
             <span v-if="active" class="field-hint">{{ stageLabel(active.run.stage) }} · {{ progressText(active.run) }}</span>
@@ -133,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { listModels, type ModelConfig } from '@/api/model'
 import {
   deleteWikiEvaluation,
@@ -166,8 +166,11 @@ const pageSize = ref(20)
 const total = ref(0)
 const edgeKind = ref<'correct' | 'missing' | 'extra' | 'unscored'>('correct')
 const form = reactive({ datasetId: '', chatModelId: '', embeddingModelId: '', threshold: 0.8 })
+let disposed = false
+let pollGeneration = 0
 
 const selectedDataset = computed(() => datasets.value.find((item) => item.id === form.datasetId))
+const canStart = computed(() => props.canRun && Boolean(form.datasetId && form.chatModelId && form.embeddingModelId))
 const datasetOptions = computed(() => datasets.value.map((item) => ({ label: item.id, value: item.id })))
 const columns = [
   { colKey: 'id', title: '运行 ID', width: 250 }, { colKey: 'dataset_id', title: '数据集', width: 140 },
@@ -239,16 +242,32 @@ async function start() {
   starting.value = true; formError.value = ''
   try {
     active.value = await startWikiEvaluation({ dataset_id: form.datasetId, chat_id: form.chatModelId, embedding_id: form.embeddingModelId, semantic_threshold: form.threshold })
-    polling.value = true
-    for (;;) {
-      await new Promise((resolve) => window.setTimeout(resolve, 2000))
-      active.value = await getWikiEvaluation(active.value.run.id)
-      if (active.value.run.status >= 2) break
-    }
-    detail.value = active.value
-    await loadRuns()
+    await pollRun(active.value.run.id)
   } catch (error: any) { formError.value = error?.message || '启动 Wiki 评测失败' }
-  finally { starting.value = false; polling.value = false }
+  finally { starting.value = false }
+}
+
+async function pollRun(runId: string) {
+  const generation = ++pollGeneration
+  polling.value = true
+  try {
+    while (!disposed && generation === pollGeneration) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000))
+      if (disposed || generation !== pollGeneration) return
+      active.value = await getWikiEvaluation(runId)
+      if (active.value.run.status >= 2) {
+        detail.value = active.value
+        await loadRuns()
+        return
+      }
+    }
+  } catch (error: any) {
+    if (!disposed && generation === pollGeneration) {
+      formError.value = error?.message || '轮询 Wiki 评测状态失败'
+    }
+  } finally {
+    if (generation === pollGeneration) polling.value = false
+  }
 }
 async function openDetail(context: { row: WikiEvaluationRun }) {
   try { detail.value = await getWikiEvaluation(context.row.id) }
@@ -267,7 +286,24 @@ async function download(format: 'json' | 'markdown') {
   } catch (error: any) { listError.value = error?.message || '下载报告失败' }
 }
 
-onMounted(async () => { await Promise.all([loadOptions(), loadRuns()]) })
+onMounted(async () => {
+  await Promise.all([loadOptions(), loadRuns()])
+  if (disposed) return
+  const running = runs.value.find((run) => run.status === 0 || run.status === 1)
+  if (!running) return
+  try {
+    active.value = await getWikiEvaluation(running.id)
+    if (active.value.run.status < 2) void pollRun(running.id)
+  } catch (error: any) {
+    formError.value = error?.message || '恢复 Wiki 评测状态失败'
+  }
+})
+
+onUnmounted(() => {
+  disposed = true
+  pollGeneration += 1
+  polling.value = false
+})
 </script>
 
 <style scoped>

@@ -2,12 +2,14 @@ package handler
 
 import (
 	"context"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -114,7 +116,11 @@ func (h *ModelCallHandler) GetPrice(c *gin.Context) {
 	price, err := h.service.GetPrice(ctx, c.Param("modelId"))
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
-		c.Error(errors.NewNotFoundError("Model price not found"))
+		if stderrors.Is(err, service.ErrModelPriceNotFound) {
+			c.Error(errors.NewNotFoundError("Model price not found"))
+			return
+		}
+		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": price})
@@ -147,6 +153,10 @@ func (h *ModelCallHandler) UpsertPrice(c *gin.Context) {
 	}
 	if err := h.service.UpsertPrice(ctx, price); err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
+		if stderrors.Is(err, service.ErrInvalidModelPrice) {
+			c.Error(errors.NewBadRequestError(err.Error()))
+			return
+		}
 		c.Error(errors.NewInternalServerError(err.Error()))
 		return
 	}

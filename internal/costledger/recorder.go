@@ -6,9 +6,12 @@ package costledger
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
+
+const recordTimeout = 5 * time.Second
 
 // Recorder persists one model call into the ledger.
 type Recorder interface {
@@ -42,5 +45,9 @@ func Record(ctx context.Context, info *types.ModelCallInfo) error {
 	if r == nil {
 		return nil
 	}
-	return r.Record(ctx, info)
+	// Model completion and billing evidence outlive an HTTP disconnect. Keep
+	// attribution values from the request while bounding the database write.
+	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancel()
+	return r.Record(recordCtx, info)
 }

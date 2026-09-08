@@ -6,7 +6,7 @@
 
 ## 实现完整性（对应 AC1-AC8）
 
-- [x] AC1 双库迁移：PG 000091 与 SQLite 000016 创建 `embedding_cache_entries`，守卫测试更新到版本 16；从零建库与升级路径通过。（验证：`go test ./internal/database/ -v`）
+- [x] AC1 双库迁移：PG 000095 与 SQLite 000017 创建 `embedding_cache_entries`，守卫测试更新到版本 17；从零建库与升级路径通过。（验证：`go test ./internal/database/ -v`）
 - [x] AC2 缓存键正确：相同租户/模型/维度/文本命中；任一不同则不命中。（验证：cache wrapper 单测 + repository 单测）
 - [x] AC3 单条命中：第二次 Embedding 同一文本不再调用底层模型，返回相同向量。（验证：`TestCachedEmbedderSingleHit`）
 - [x] AC4 批量部分命中：混合已缓存/未缓存文本时只对未缓存文本调用一次模型，返回顺序一致。（验证：`TestCachedEmbedderBatchPartialHit`）

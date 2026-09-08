@@ -1,6 +1,6 @@
 # Embedding 缓存（课题三 WP5）Tasks
 
-> 状态：待审批（2026-09-02）
+> 状态：已自审并实现（2026-09-08）
 > 上游文档：[spec.md](./spec.md)（已批准）、[plan.md](./plan.md)（已批准）
 
 ## 文件清单
@@ -19,8 +19,8 @@
 | 新建 | `internal/handler/embedding_cache_test.go` | Handler 单测 |
 | 修改 | `internal/router/routes_infra.go` | 注册统计路由 |
 | 修改 | `internal/container/container.go` | Provide repo + env 开关 |
-| 新建 | `migrations/versioned/000091_embedding_cache_entries.up.sql` / `.down.sql` | PG 表 |
-| 新建 | `migrations/sqlite/000016_embedding_cache_entries.up.sql` / `.down.sql` | SQLite 表 |
+| 新建 | `migrations/versioned/000095_embedding_cache_entries.up.sql` / `.down.sql` | PG 表 |
+| 新建 | `migrations/sqlite/000017_embedding_cache_entries.up.sql` / `.down.sql` | SQLite 表 |
 | 修改 | `internal/database/migration_sqlite_versioned_schema_test.go` | 守卫测试 |
 | 新建 | `docs/specs/embedding-cache/progress-2026-09-02.md` | 实现与验收记录 |
 
@@ -123,7 +123,7 @@ go test ./internal/handler/ -run EmbeddingCache
 
 ## T6: 双库迁移
 
-**文件：** 新建 PG 000091、SQLite 000016，修改守卫测试
+**文件：** 新建 PG 000095、SQLite 000017，修改守卫测试
 **依赖：** T1
 **步骤：**
 1. 建表：`embedding_cache_entries`，唯一约束四字段，vector 用 JSONB/TEXT。

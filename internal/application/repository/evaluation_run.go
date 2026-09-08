@@ -99,7 +99,7 @@ func (r *evaluationRunRepository) ListByType(
 		return nil, 0, err
 	}
 	if err := query.
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Offset(p.Offset()).
 		Limit(p.Limit()).
 		Find(&runs).Error; err != nil {

@@ -6,7 +6,7 @@
 
 ## 实现完整性（对应 AC1-AC11）
 
-- [x] AC1 双库迁移：PG 000089/000090 与 SQLite 000014/000015 创建两张表；SQLite 守卫测试更新到版本 15，从零建库与升级路径通过。（验证：`go test ./internal/database/ -v`）
+- [x] AC1 双库迁移：PG 000093/000094 与 SQLite 000015/000016 创建两张表；SQLite 守卫测试更新到版本 16，从零建库与升级路径通过。（验证：`go test ./internal/database/ -v`）
 - [x] AC2 Chat 落库：真实 mock Chat 调用后 `model_call_records` 出现 17 条成功记录，含租户、模型、状态、Token、耗时与价格快照。（验证：SQLite 查库 + API 明细）
 - [x] AC3 Embedding 落库：mock Embedding 调用后出现 30 条成功记录，Token 为近似值。（验证：SQLite 查库 + API 明细）
 - [x] AC4 失败落库：cost wrapper 失败路径单测覆盖，记录 status=failed、错误类型与摘要；实现不存 Prompt/Key。（验证：`cost_wrapper_test.go`）

@@ -1,6 +1,6 @@
 # 模型调用台账与费用估算（课题三 WP4）Plan
 
-> 状态：待审批（2026-09-02）
+> 状态：已自审并实现（2026-09-08）
 > 上游文档：[spec.md](./spec.md)（已批准）
 
 ## 架构概览
@@ -268,10 +268,10 @@ frontend/src/components/settings/...（入口菜单）
 ### 双库迁移
 
 ```text
-migrations/versioned/000089_model_call_records.{up,down}.sql
-migrations/versioned/000090_model_prices.{up,down}.sql
-migrations/sqlite/000014_model_call_records.{up,down}.sql
-migrations/sqlite/000015_model_prices.{up,down}.sql
+migrations/versioned/000093_model_call_records.{up,down}.sql
+migrations/versioned/000094_model_prices.{up,down}.sql
+migrations/sqlite/000015_model_call_records.{up,down}.sql
+migrations/sqlite/000016_model_prices.{up,down}.sql
 ```
 
 更新 `internal/database/migration_sqlite_versioned_schema_test.go`：
@@ -327,10 +327,10 @@ internal/handler/model_call.go
 internal/handler/model_call_test.go
 internal/router/routes_infra.go
 internal/container/container.go
-migrations/versioned/000089_model_call_records.*
-migrations/versioned/000090_model_prices.*
-migrations/sqlite/000014_model_call_records.*
-migrations/sqlite/000015_model_prices.*
+migrations/versioned/000093_model_call_records.*
+migrations/versioned/000094_model_prices.*
+migrations/sqlite/000015_model_call_records.*
+migrations/sqlite/000016_model_prices.*
 frontend/src/api/model/usage.ts
 frontend/src/views/system/ModelUsage.vue
 docs/specs/cost-ledger/...
@@ -361,5 +361,5 @@ docs/specs/cost-ledger/...
 | F6 汇总 API | `GET /model-calls/summary` |
 | F7 价格 API | `GET/PUT /model-prices` |
 | F8 最小页面 | `ModelUsage.vue` |
-| F9 双库迁移 | PG 000089/000090 + SQLite 000014/000015 |
+| F9 双库迁移 | PG 000093/000094 + SQLite 000015/000016 |
 | N1-N6 | 租户过滤、无 Prompt/Key、同步落库、双库、测试、no-op 降级 |

@@ -1,6 +1,6 @@
 # Embedding 缓存（课题三 WP5）Plan
 
-> 状态：待审批（2026-09-02）
+> 状态：已自审并实现（2026-09-08）
 > 上游文档：[spec.md](./spec.md)（已批准）
 
 ## 架构概览
@@ -9,13 +9,13 @@ WP5 在 Embedding 客户端层插入一个 cache wrapper：
 
 ```
 业务调用
+  → cache wrapper（命中直接返回）
   → cost wrapper
   → langfuse/debug
-  → cache wrapper（命中直接返回）
   → concurrency + provider（未命中才走）
 ```
 
-缓存数据落在数据库表 `embedding_cache_entries`，键为“租户 + 模型 + 维度 + 文本 SHA-256”。容器启动时根据环境变量决定是否安装缓存；未安装时 wrapper 不存在，行为与现在完全一致。
+缓存数据落在数据库表 `embedding_cache_entries`，键为“租户 + 模型 + 维度 +（向量配置签名 + 文本）的 SHA-256”。容器启动时根据环境变量决定是否安装缓存；未安装时 wrapper 不存在，行为与现在完全一致。
 
 ## 核心数据结构
 
@@ -107,9 +107,9 @@ type cachedEmbedder struct {
 ```
 
 - `Embed`：构造 key → Get；命中计数并返回；未命中调用 inner 后 Set。
-- `BatchEmbed`：逐条 Get；未命中文本合并调用 inner.BatchEmbed；按原顺序合并；写缓存。
+- `BatchEmbed`：相同输入先去重并查询缓存；未命中的唯一文本合并调用 inner.BatchEmbed；校验返回数量和向量维度后按原顺序合并并写缓存。
 - `BatchEmbedWithPool`：把自身作为 pool model 传下去，让子批次也走缓存。
-- `cacheKey(ctx, modelID, dimension, text)`：tenant 优先 context，缺省用模型 TenantID；TextHash 为 SHA-256 hex。
+- `cacheKey(ctx, modelID, dimension, namespace, text)`：tenant 优先 context，缺省用模型 TenantID；namespace 由模型名、服务地址、Provider、维度、截断和扩展配置生成，TextHash 为 namespace 与文本的 SHA-256 hex。
 
 ### Repository
 
@@ -173,8 +173,8 @@ internal/handler/embedding_cache.go
 internal/handler/embedding_cache_test.go
 internal/router/routes_infra.go
 internal/container/container.go
-migrations/versioned/000091_embedding_cache_entries.up.sql / .down.sql
-migrations/sqlite/000016_embedding_cache_entries.up.sql / .down.sql
+migrations/versioned/000095_embedding_cache_entries.up.sql / .down.sql
+migrations/sqlite/000017_embedding_cache_entries.up.sql / .down.sql
 internal/database/migration_sqlite_versioned_schema_test.go
 docs/specs/embedding-cache/...
 ```
@@ -200,5 +200,5 @@ docs/specs/embedding-cache/...
 | F3 包装层 | `cachedEmbedder` |
 | F4 开关与降级 | 容器 env + fail-open |
 | F5 可观测统计 | `CacheStats` + API |
-| F6 双库迁移 | PG 000091 + SQLite 000016 |
+| F6 双库迁移 | PG 000095 + SQLite 000017 |
 | N1-N5 | 键隔离、租户过滤、低侵入、测试、无清理 |

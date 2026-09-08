@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -63,6 +64,7 @@ func newModelCallTestRouter(svc *fakeModelCallService) *gin.Engine {
 	r.GET("/model-calls", h.List)
 	r.GET("/model-calls/summary", h.Summary)
 	r.GET("/model-prices", h.ListPrices)
+	r.GET("/model-prices/:modelId", h.GetPrice)
 	r.PUT("/model-prices/:modelId", h.UpsertPrice)
 	return r
 }
@@ -100,4 +102,26 @@ func TestModelCallUpsertPrice(t *testing.T) {
 	newModelCallTestRouter(svc).ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"model_id":"m1"`)
+}
+
+func TestModelPriceErrorMapping(t *testing.T) {
+	svc := &fakeModelCallService{err: service.ErrInvalidModelPrice}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/model-prices/m1",
+		bytes.NewReader([]byte(`{"input_price_per_million":-1,"currency":"USD"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	newModelCallTestRouter(svc).ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+
+	svc.err = service.ErrModelPriceNotFound
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/model-prices/missing", nil)
+	newModelCallTestRouter(svc).ServeHTTP(w, req)
+	require.Equal(t, http.StatusNotFound, w.Code)
+
+	svc.err = context.DeadlineExceeded
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/model-prices/m1", nil)
+	newModelCallTestRouter(svc).ServeHTTP(w, req)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
 }

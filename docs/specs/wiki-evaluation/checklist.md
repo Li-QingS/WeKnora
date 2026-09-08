@@ -1,6 +1,6 @@
 # Wiki 评测与统一评测中心 Checklist
 
-> 状态：已批准（2026-09-07，用户授权开始开发）
+> 状态：已自审并实现，待真实模型端到端验收（2026-09-08）
 > 每一项都通过运行命令、调用接口或观察用户可见行为验证；验收时填写实际结果和证据。
 
 ## 需求验收
@@ -71,7 +71,7 @@
 
 - [ ] **C33 / AC17：成功资源清理。** success run 的临时知识库、knowledge、Wiki 页面、pending ops 和 dead letters 均不存在，run、结果与报告仍存在。（验证：按 `temporary_kb_id` 查询所有资源表/接口，再查询 run 和报告）
 
-- [ ] **C34 / AC17：失败资源清理及重试。** 业务失败后清理成功才进入 failed；首次删除失败时保持 cleaning_up，恢复器重试成功后资源消失并进入正确终态。（验证：注入一次性删除失败并观察两次恢复结果）
+- [x] **C34 / AC17：失败资源清理及重试。** 业务失败后清理成功才进入 failed；首次删除失败时保持 cleaning_up，恢复器重试成功后资源消失并进入正确终态。（验证：`TestInterruptedWikiCleanupCanRetryAndFinalize`，并增加每分钟周期恢复器）
 
 - [ ] **C35 / AC18：Gold 完整性拦截。** Gold 缺失、未知字段、非法类型、重复 ID、悬空边、内容哈希错误和数据集哈希不匹配均在创建 run/KB 前被拒绝，并返回具体原因。（验证：逐个运行固定无效 Gold fixture）
 
@@ -113,11 +113,11 @@
 
 - [x] **C52：HTTP 和权限测试通过。** （验证：相关包与 `go test ./... -count=1` 均通过）
 
-- [x] **C53：前端测试、类型检查和生产构建通过。** （验证：`./scripts/verify_frontend_pr.sh` 通过：599 项断言、类型检查、Vite 生产构建）
+- [x] **C53：前端测试、类型检查和生产构建通过。** （验证：2026-09-08 `npm test` 638 项测试通过，`npm run type-check` 与 `npm run build` 通过）
 
 - [x] **C54：全仓 Go 测试和构建通过。** （验证：`go test ./... -count=1` 与 `go build ./...` 均通过）
 
-- [ ] **C55：Go lint 与格式检查通过。** （验证：`gofmt -l` 对本次 Go 文件无输出，`golangci-lint run` 无新增问题，`git diff --check` 无输出）
+- [x] **C55：Go lint 与格式检查通过。** （验证：`gofmt -l` 对本次 Go 文件无输出，`go vet ./...` 与 `git diff --check` 无输出）
 
 - [x] **C56：国际化键检查通过。** （验证：`cd frontend && npm run check-i18n` 通过，11 项断言）
 

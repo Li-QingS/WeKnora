@@ -9,13 +9,30 @@ import (
 )
 
 type fakeRecorder struct {
-	calls int
-	err   error
+	calls  int
+	err    error
+	ctxErr error
 }
 
-func (f *fakeRecorder) Record(context.Context, *types.ModelCallInfo) error {
+func (f *fakeRecorder) Record(ctx context.Context, _ *types.ModelCallInfo) error {
 	f.calls++
+	f.ctxErr = ctx.Err()
 	return f.err
+}
+
+func TestRecordSurvivesCallerCancellation(t *testing.T) {
+	f := &fakeRecorder{}
+	SetRecorder(f)
+	defer SetRecorder(nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := Record(ctx, &types.ModelCallInfo{ModelID: "m1"}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	if f.ctxErr != nil {
+		t.Fatalf("recorder context error=%v, want a live detached context", f.ctxErr)
+	}
 }
 
 func TestRecordNoopWithoutRecorder(t *testing.T) {

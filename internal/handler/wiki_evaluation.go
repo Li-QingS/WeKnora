@@ -31,11 +31,12 @@ func (h *WikiEvaluationHandler) Start(c *gin.Context) {
 	detail, err := h.service.Start(c.Request.Context(), &request)
 	if err != nil {
 		if stderrors.Is(err, service.ErrDatasetNotFound) || stderrors.Is(err, service.ErrInvalidDataset) ||
-			stderrors.Is(err, service.ErrWikiGoldNotFound) || stderrors.Is(err, service.ErrInvalidWikiGold) {
+			stderrors.Is(err, service.ErrWikiGoldNotFound) || stderrors.Is(err, service.ErrInvalidWikiGold) ||
+			stderrors.Is(err, service.ErrInvalidWikiEvaluationParams) {
 			c.Error(apperrors.NewBadRequestError(err.Error()))
 			return
 		}
-		c.Error(apperrors.NewBadRequestError(err.Error()))
+		c.Error(apperrors.NewInternalServerError(err.Error()))
 		return
 	}
 	c.JSON(http.StatusAccepted, gin.H{"success": true, "data": detail})

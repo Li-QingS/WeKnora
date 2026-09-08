@@ -5,10 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/costledger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+)
+
+var (
+	ErrInvalidModelPrice  = errors.New("invalid model price")
+	ErrModelPriceNotFound = errors.New("model price not found")
 )
 
 // modelCallRecorder implements costledger.Recorder using the ledger repos.
@@ -95,6 +102,12 @@ func estimateCost(price *types.ModelPrice, info *types.ModelCallInfo) *float64 {
 	if price == nil {
 		return nil
 	}
+	// The stored field and the current UI are USD-denominated. Legacy or
+	// externally inserted non-USD rows stay visible but are not mislabeled as
+	// dollar estimates without an exchange-rate conversion.
+	if !strings.EqualFold(price.Currency, "USD") {
+		return nil
+	}
 	if price.UnitType != "" && price.UnitPrice != nil {
 		value := float64(info.UnitCount) * *price.UnitPrice
 		return &value
@@ -164,14 +177,40 @@ func (s *modelCallService) UpsertPrice(ctx context.Context, price *types.ModelPr
 	if price == nil {
 		return errors.New("model price: nil price")
 	}
+	price.ModelID = strings.TrimSpace(price.ModelID)
 	if price.ModelID == "" {
-		return errors.New("model price: model_id is required")
+		return fmt.Errorf("%w: model_id is required", ErrInvalidModelPrice)
 	}
-	tenantID := types.MustTenantIDFromContext(ctx)
-	price.TenantID = tenantID
+	price.UnitType = strings.TrimSpace(price.UnitType)
+	price.Currency = strings.ToUpper(strings.TrimSpace(price.Currency))
 	if price.Currency == "" {
 		price.Currency = "USD"
 	}
+	if price.Currency != "USD" {
+		return fmt.Errorf("%w: only USD is supported", ErrInvalidModelPrice)
+	}
+	for name, value := range map[string]*float64{
+		"input_price_per_million":       price.InputPricePerMillion,
+		"output_price_per_million":      price.OutputPricePerMillion,
+		"cache_read_price_per_million":  price.CacheReadPricePerMillion,
+		"cache_write_price_per_million": price.CacheWritePricePerMillion,
+		"unit_price":                    price.UnitPrice,
+	} {
+		if value != nil && (*value < 0 || math.IsNaN(*value) || math.IsInf(*value, 0)) {
+			return fmt.Errorf("%w: %s must be a finite non-negative number", ErrInvalidModelPrice, name)
+		}
+	}
+	hasTokenPrice := price.InputPricePerMillion != nil || price.OutputPricePerMillion != nil ||
+		price.CacheReadPricePerMillion != nil || price.CacheWritePricePerMillion != nil
+	hasUnitPrice := price.UnitType != "" || price.UnitPrice != nil
+	if (price.UnitType == "") != (price.UnitPrice == nil) {
+		return fmt.Errorf("%w: unit_type and unit_price must be configured together", ErrInvalidModelPrice)
+	}
+	if hasTokenPrice && hasUnitPrice {
+		return fmt.Errorf("%w: token prices and unit prices cannot be mixed", ErrInvalidModelPrice)
+	}
+	tenantID := types.MustTenantIDFromContext(ctx)
+	price.TenantID = tenantID
 	return s.prices.Upsert(ctx, price)
 }
 
@@ -182,7 +221,7 @@ func (s *modelCallService) GetPrice(ctx context.Context, modelID string) (*types
 		return nil, err
 	}
 	if price == nil {
-		return nil, errors.New("model price not found")
+		return nil, ErrModelPriceNotFound
 	}
 	return price, nil
 }

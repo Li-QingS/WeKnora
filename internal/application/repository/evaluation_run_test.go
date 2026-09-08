@@ -196,6 +196,25 @@ func TestEvaluationRun_ListByType(t *testing.T) {
 	assert.Equal(t, "wiki-run", wikiRuns[0].ID)
 }
 
+func TestEvaluationRun_ListUsesStableIDTieBreaker(t *testing.T) {
+	db := setupEvaluationRunTestDB(t)
+	repo := NewEvaluationRunRepository(db)
+	createdAt := time.Now()
+	createEvaluationRuns(t, repo,
+		newTestEvaluationRun("run-a", 1, types.EvaluationStatueSuccess, createdAt),
+		newTestEvaluationRun("run-b", 1, types.EvaluationStatueSuccess, createdAt),
+	)
+
+	runs, total, err := repo.List(
+		evaluationRunCtx(1), 1, nil, &types.Pagination{Page: 1, PageSize: 20},
+	)
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, runs, 2)
+	assert.Equal(t, "run-b", runs[0].ID)
+	assert.Equal(t, "run-a", runs[1].ID)
+}
+
 func TestEvaluationRun_WikiStageResultAndCleanupQuery(t *testing.T) {
 	db := setupEvaluationRunTestDB(t)
 	repo := NewEvaluationRunRepository(db)

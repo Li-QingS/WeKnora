@@ -895,8 +895,59 @@ func cleanupStaleEvaluationKnowledgeBases(
 	db *gorm.DB,
 	tenantService interfaces.TenantService,
 	knowledgeBaseService interfaces.KnowledgeBaseService,
+	cleaner interfaces.ResourceCleaner,
 ) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	recoverStaleEvaluationKnowledgeBases(ctx, db, tenantService, knowledgeBaseService)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				recoverStaleEvaluationKnowledgeBases(ctx, db, tenantService, knowledgeBaseService)
+			}
+		}
+	}()
+	cleaner.RegisterWithName("EvaluationRecovery", func() error {
+		cancel()
+		<-done
+		return nil
+	})
+}
+
+func recoverStaleEvaluationKnowledgeBases(
+	ctx context.Context,
+	db *gorm.DB,
+	tenantService interfaces.TenantService,
+	knowledgeBaseService interfaces.KnowledgeBaseService,
+) {
+	if ctx.Err() != nil {
+		return
+	}
+	cutoff := time.Now().Add(-service.EvaluationStaleCutoff)
+	affected, err := repository.NewEvaluationRunRepository(db).MarkStaleInterrupted(ctx, cutoff)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to mark stale evaluation runs during recovery: %v", err)
+		return
+	}
+	if affected > 0 {
+		logger.Infof(ctx, "Marked %d stale evaluation runs as interrupted during recovery", affected)
+	}
+	cleanupInterruptedEvaluationKnowledgeBases(ctx, db, tenantService, knowledgeBaseService)
+}
+
+func cleanupInterruptedEvaluationKnowledgeBases(
+	ctx context.Context,
+	db *gorm.DB,
+	tenantService interfaces.TenantService,
+	knowledgeBaseService interfaces.KnowledgeBaseService,
+) {
 	var runs []struct {
 		TenantID       uint64
 		TemporaryKBID  string
@@ -914,13 +965,17 @@ func cleanupStaleEvaluationKnowledgeBases(
 
 	seen := map[string]struct{}{}
 	for _, run := range runs {
+		if ctx.Err() != nil {
+			return
+		}
 		if run.TemporaryKBID == "" {
 			continue
 		}
-		if _, ok := seen[run.TemporaryKBID]; ok {
+		key := fmt.Sprintf("%d\x00%s", run.TenantID, run.TemporaryKBID)
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[run.TemporaryKBID] = struct{}{}
+		seen[key] = struct{}{}
 
 		var active int64
 		if err := db.Table("knowledge_bases").

@@ -103,6 +103,25 @@ func TestWikiEvaluationHandler_StartMapsOptionsAndReturnsAccepted(t *testing.T) 
 	assert.Equal(t, 0.82, svc.opts.SemanticThreshold)
 }
 
+func TestWikiEvaluationHandler_StartDistinguishesInputAndServerErrors(t *testing.T) {
+	svc := &fakeWikiEvaluationService{err: service.ErrInvalidWikiEvaluationParams}
+	router := newWikiEvaluationHandlerTestRouter(svc)
+	body := []byte(`{"dataset_id":"enterprise_rag","chat_id":"chat-1","embedding_id":"embedding-1"}`)
+
+	req := httptest.NewRequest(http.MethodPost, "/evaluation/wiki/runs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusBadRequest, w.Code)
+
+	svc.err = errors.New("database unavailable")
+	req = httptest.NewRequest(http.MethodPost, "/evaluation/wiki/runs", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
 func TestWikiEvaluationHandler_ReportReturnsPersistedArtifact(t *testing.T) {
 	svc := &fakeWikiEvaluationService{
 		report:   []byte("# Wiki evaluation"),

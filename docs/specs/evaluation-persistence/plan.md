@@ -26,7 +26,7 @@ GET /evaluation/runs（新） ──► 按租户分页列表，支持状态筛�
 
 ## 核心数据结构
 
-### 表结构变更（`evaluation_runs` 扩列，方案 A：扩充现有未提交的 000088/000013）
+### 表结构变更（`evaluation_runs` 扩列，合并 upstream 后编号为 000092/000014）
 
 | 列 | 类型（PG / SQLite） | 说明 |
 |---|---|---|
@@ -154,8 +154,8 @@ handler.Evaluation
 ## 文件组织
 
 ```
-migrations/versioned/000088_evaluation_runs.{up,down}.sql   — 扩充：+5 列（修改现有未提交文件）
-migrations/sqlite/000013_evaluation_runs.{up,down}.sql      — 同步扩充
+migrations/versioned/000092_evaluation_runs.{up,down}.sql   — 扩充：+5 列
+migrations/sqlite/000014_evaluation_runs.{up,down}.sql      — 同步扩充
 internal/database/migration_sqlite_versioned_schema_test.go — 守卫测试登记表更新
 
 internal/types/evaluation.go                 — EvaluationRun 模型、Interrupted 状态、Snapshot 类型
@@ -178,7 +178,7 @@ docs/specs/evaluation-persistence/           — spec.md / plan.md / task.md / c
 
 | 决策点 | 选择 | 理由 |
 |--------|------|------|
-| 迁移方式 | 扩充现有 000088/000013 | 未提交未推送，仅本地库应用过；保持"一张表一个迁移" |
+| 迁移方式 | PG 000092 / SQLite 000014 | 合并 upstream 后重新编号，保持迁移序列无冲突 |
 | 状态存储 | DB 为唯一事实来源，删除内存 map | 进度写频率低（每样本一次），直写开销可忽略；避免双写一致性问题 |
 | 终态保护 | repo 层 CAS（`WHERE status IN (...)`） | 数据库层面保证不可变，不依赖应用层自觉 |
 | 版本信息来源 | 新建 `internal/buildinfo` 包 + ldflags | 避免 service→handler 反向依赖；Makefile 双份注入成本极低 |

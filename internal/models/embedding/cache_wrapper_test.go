@@ -2,6 +2,8 @@ package embedding
 
 import (
 	"context"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 
@@ -40,8 +42,11 @@ func (f *fakeCache) IncrementHit(context.Context, *types.EmbeddingCacheKey) erro
 }
 
 type countingEmbedder struct {
-	embedCalls int
-	batchCalls int
+	embedCalls     int
+	batchCalls     int
+	lastBatch      []string
+	batchResult    [][]float32
+	useBatchResult bool
 }
 
 func (e *countingEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
@@ -51,6 +56,10 @@ func (e *countingEmbedder) Embed(_ context.Context, text string) ([]float32, err
 
 func (e *countingEmbedder) BatchEmbed(_ context.Context, texts []string) ([][]float32, error) {
 	e.batchCalls++
+	e.lastBatch = append([]string(nil), texts...)
+	if e.useBatchResult {
+		return e.batchResult, nil
+	}
 	out := make([][]float32, len(texts))
 	for i, text := range texts {
 		out[i] = []float32{float32(len(text))}
@@ -150,6 +159,70 @@ func TestCachedEmbedderBatchPartialHit(t *testing.T) {
 	}
 	if results[0][0] != 1 || results[1][0] != 2 || results[2][0] != 1 {
 		t.Errorf("results=%v", results)
+	}
+}
+
+func TestCachedEmbedderBatchDeduplicatesColdInputs(t *testing.T) {
+	cache := newFakeCache()
+	inner := &countingEmbedder{}
+	c := &cachedEmbedder{inner: inner, cache: cache, tenantID: 7}
+
+	results, err := c.BatchEmbed(context.Background(), []string{"a", "a", "bb"})
+	if err != nil {
+		t.Fatalf("BatchEmbed: %v", err)
+	}
+	if !reflect.DeepEqual(inner.lastBatch, []string{"a", "bb"}) {
+		t.Fatalf("provider inputs=%v, want unique inputs", inner.lastBatch)
+	}
+	if len(results) != 3 || results[0][0] != 1 || results[1][0] != 1 || results[2][0] != 2 {
+		t.Fatalf("results=%v", results)
+	}
+}
+
+func TestCachedEmbedderBatchRejectsWrongProviderCount(t *testing.T) {
+	cache := newFakeCache()
+	inner := &countingEmbedder{
+		useBatchResult: true,
+		batchResult:    [][]float32{{1}},
+	}
+	c := &cachedEmbedder{inner: inner, cache: cache, tenantID: 7}
+
+	_, err := c.BatchEmbed(context.Background(), []string{"a", "bb"})
+	if err == nil || !strings.Contains(err.Error(), "returned 1 vectors for 2 inputs") {
+		t.Fatalf("error=%v, want provider count mismatch", err)
+	}
+}
+
+func TestCachedEmbedderTreatsInvalidCachedVectorAsMiss(t *testing.T) {
+	cache := newFakeCache()
+	inner := &countingEmbedder{}
+	c := &cachedEmbedder{inner: inner, cache: cache, tenantID: 7}
+	key := c.keyFor(context.Background(), "hello")
+	if err := cache.Set(context.Background(), &key, []float32{1, 2}); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+
+	vector, err := c.Embed(context.Background(), "hello")
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if inner.embedCalls != 1 || !reflect.DeepEqual(vector, []float32{5}) {
+		t.Fatalf("embed calls=%d vector=%v, want provider refresh", inner.embedCalls, vector)
+	}
+}
+
+func TestEmbeddingCacheNamespaceTracksVectorSettings(t *testing.T) {
+	base := Config{BaseURL: "https://one.example/v1", ModelName: "embed-1", APIKey: "secret-one", Dimensions: 1}
+	changedEndpoint := base
+	changedEndpoint.BaseURL = "https://two.example/v1"
+	changedCredential := base
+	changedCredential.APIKey = "secret-two"
+
+	if embeddingCacheNamespace(base) == embeddingCacheNamespace(changedEndpoint) {
+		t.Fatal("cache namespace must change with the model endpoint")
+	}
+	if embeddingCacheNamespace(base) != embeddingCacheNamespace(changedCredential) {
+		t.Fatal("cache namespace must not depend on credentials")
 	}
 }
 

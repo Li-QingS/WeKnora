@@ -107,7 +107,7 @@ func NewEmbedder(config Config, pooler EmbedderPooler, ollamaService *ollama.Oll
 		e = &langfuseEmbedder{inner: e}
 	}
 	e = wrapEmbeddingCost(e, config.TenantID)
-	return wrapEmbeddingCache(e, config.TenantID, pooler), nil
+	return wrapEmbeddingCache(e, config.TenantID, pooler, embeddingCacheNamespace(config)), nil
 }
 
 func newEmbedder(config Config, pooler EmbedderPooler, ollamaService *ollama.OllamaService) (Embedder, error) {

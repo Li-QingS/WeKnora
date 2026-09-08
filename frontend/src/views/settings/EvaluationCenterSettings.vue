@@ -364,7 +364,7 @@
     </div>
 	</div>
 
-	<WikiEvaluationPanel v-show="activeEvaluator === 'wiki'" :can-run="canRun" class="evaluation-panel" />
+	<WikiEvaluationPanel v-if="activeEvaluator === 'wiki'" :can-run="canRun" class="evaluation-panel" />
   </div>
 </template>
 

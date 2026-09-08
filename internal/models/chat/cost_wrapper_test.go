@@ -9,8 +9,9 @@ import (
 )
 
 type fakeCostChat struct {
-	resp *types.ChatResponse
-	err  error
+	resp   *types.ChatResponse
+	stream <-chan types.StreamResponse
+	err    error
 }
 
 func (f *fakeCostChat) Chat(context.Context, []Message, *ChatOptions) (*types.ChatResponse, error) {
@@ -18,7 +19,36 @@ func (f *fakeCostChat) Chat(context.Context, []Message, *ChatOptions) (*types.Ch
 }
 
 func (f *fakeCostChat) ChatStream(context.Context, []Message, *ChatOptions) (<-chan types.StreamResponse, error) {
-	return nil, f.err
+	return f.stream, f.err
+}
+
+func TestCostChatStreamRecordsInBandFailure(t *testing.T) {
+	rec := costledger.NewMemRecorder()
+	costledger.SetRecorder(rec)
+	defer costledger.SetRecorder(nil)
+	stream := make(chan types.StreamResponse, 1)
+	stream <- types.StreamResponse{
+		ResponseType: types.ResponseTypeError,
+		Content:      "provider stream failed",
+		Done:         true,
+		FinishReason: types.FinishReasonIncomplete,
+	}
+	close(stream)
+	c := &costChat{inner: &fakeCostChat{stream: stream}, tenantID: 7}
+
+	wrapped, err := c.ChatStream(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	for range wrapped {
+	}
+	info := rec.Last()
+	if info == nil {
+		t.Fatal("no stream record")
+	}
+	if info.Status != types.ModelCallStatusFailed || info.ErrorMessage != "provider stream failed" {
+		t.Fatalf("stream info=%+v", info)
+	}
 }
 
 func (f *fakeCostChat) GetModelName() string { return "chat-1" }

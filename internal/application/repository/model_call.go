@@ -55,7 +55,7 @@ func (r *modelCallRepository) List(
 	}
 	var records []*types.ModelCallRecord
 	if err := query.
-		Order("created_at DESC").
+		Order("created_at DESC, id DESC").
 		Offset(p.Offset()).
 		Limit(p.Limit()).
 		Find(&records).Error; err != nil {

@@ -190,3 +190,27 @@ func TestModelCallServiceUpsertPriceTenantScoped(t *testing.T) {
 	assert.Equal(t, uint64(9), got.TenantID)
 	assert.Equal(t, "USD", got.Currency)
 }
+
+func TestModelCallServiceRejectsInvalidPrices(t *testing.T) {
+	prices := &fakeModelPriceRepo{}
+	svc := NewModelCallService(&fakeModelCallRepo{}, prices)
+	negative := -1.0
+	unit := 0.1
+
+	tests := []*types.ModelPrice{
+		{ModelID: "m1", InputPricePerMillion: &negative},
+		{ModelID: "m1", Currency: "CNY"},
+		{ModelID: "m1", UnitPrice: &unit},
+		{ModelID: "m1", UnitType: "requests"},
+		{ModelID: "m1", UnitType: "requests", UnitPrice: &unit, InputPricePerMillion: &unit},
+	}
+	for _, price := range tests {
+		require.ErrorIs(t, svc.UpsertPrice(modelCostCtx(9), price), ErrInvalidModelPrice)
+	}
+	assert.Empty(t, prices.prices)
+}
+
+func TestEstimateCostDoesNotMislabelNonUSDPrice(t *testing.T) {
+	input := 1.0
+	assert.Nil(t, estimateCost(&types.ModelPrice{Currency: "CNY", InputPricePerMillion: &input}, modelCallInfoForTest()))
+}

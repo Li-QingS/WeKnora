@@ -114,6 +114,25 @@ func TestModelCallRepositoryListAndTenantIsolation(t *testing.T) {
 	assert.Equal(t, int64(1), total)
 }
 
+func TestModelCallRepositoryListUsesStableIDTieBreaker(t *testing.T) {
+	db := setupModelCallTestDB(t)
+	repo := NewModelCallRepository(db)
+	createdAt := time.Now()
+	first := newTestModelCall("call-a", 1, "m1", string(types.ModelCallStatusSuccess), nil)
+	second := newTestModelCall("call-b", 1, "m1", string(types.ModelCallStatusSuccess), nil)
+	first.CreatedAt = createdAt
+	second.CreatedAt = createdAt
+	require.NoError(t, repo.Create(modelCallCtx(1), first))
+	require.NoError(t, repo.Create(modelCallCtx(1), second))
+
+	records, total, err := repo.List(modelCallCtx(1), 1, nil, &types.Pagination{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	require.Equal(t, int64(2), total)
+	require.Len(t, records, 2)
+	assert.Equal(t, "call-b", records[0].ID)
+	assert.Equal(t, "call-a", records[1].ID)
+}
+
 func TestModelCallRepositoryListByRequestGroup(t *testing.T) {
 	db := setupModelCallTestDB(t)
 	repo := NewModelCallRepository(db)

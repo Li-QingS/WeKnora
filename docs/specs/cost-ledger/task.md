@@ -1,6 +1,6 @@
 # 模型调用台账与费用估算（课题三 WP4）Tasks
 
-> 状态：待审批（2026-09-02）
+> 状态：已自审并实现（2026-09-08）
 > 上游文档：[spec.md](./spec.md)（已批准）、[plan.md](./plan.md)（已批准）
 
 ## 文件清单
@@ -30,10 +30,10 @@
 | 新建 | `internal/handler/model_call_test.go` | Handler 单测 |
 | 修改 | `internal/router/routes_infra.go` | 注册路由 |
 | 修改 | `internal/container/container.go` | Repository/Service/Recorder 接线 |
-| 新建 | `migrations/versioned/000089_model_call_records.up.sql` / `.down.sql` | PG 台账表 |
-| 新建 | `migrations/versioned/000090_model_prices.up.sql` / `.down.sql` | PG 价格表 |
-| 新建 | `migrations/sqlite/000014_model_call_records.up.sql` / `.down.sql` | SQLite 台账表 |
-| 新建 | `migrations/sqlite/000015_model_prices.up.sql` / `.down.sql` | SQLite 价格表 |
+| 新建 | `migrations/versioned/000093_model_call_records.up.sql` / `.down.sql` | PG 台账表 |
+| 新建 | `migrations/versioned/000094_model_prices.up.sql` / `.down.sql` | PG 价格表 |
+| 新建 | `migrations/sqlite/000015_model_call_records.up.sql` / `.down.sql` | SQLite 台账表 |
+| 新建 | `migrations/sqlite/000016_model_prices.up.sql` / `.down.sql` | SQLite 价格表 |
 | 修改 | `internal/database/migration_sqlite_versioned_schema_test.go` | 守卫测试 |
 | 新建 | `frontend/src/api/model/usage.ts` | 前端 API |
 | 新建 | `frontend/src/views/system/ModelUsage.vue` | 模型用量页面 |
@@ -147,7 +147,7 @@ go test ./internal/application/service/ -run 'ModelCall|ModelCost|ModelPrice'
 
 ## T6: 双库迁移
 
-**文件：** 新建 PG 000089/000090、SQLite 000014/000015，修改守卫测试
+**文件：** 新建 PG 000093/000094、SQLite 000015/000016，修改守卫测试
 **依赖：** T1
 **步骤：**
 1. 编写 `model_call_records` 建表/回滚 SQL，PG 用 JSONB，SQLite 用 TEXT。

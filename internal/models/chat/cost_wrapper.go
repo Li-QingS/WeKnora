@@ -2,6 +2,8 @@ package chat
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/costledger"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -53,13 +55,31 @@ func (c *costChat) ChatStream(
 	wrapped := make(chan types.StreamResponse)
 	go func() {
 		defer close(wrapped)
+		var streamErr error
+		forward := true
 		for resp := range ch {
 			if resp.Usage != nil {
 				fillTokenUsage(info, *resp.Usage)
 			}
-			wrapped <- resp
+			if resp.ResponseType == types.ResponseTypeError || resp.FinishReason == types.FinishReasonIncomplete {
+				message := strings.TrimSpace(resp.Content)
+				if message == "" {
+					message = "chat stream ended incomplete"
+				}
+				streamErr = errors.New(message)
+			}
+			if forward {
+				select {
+				case wrapped <- resp:
+				case <-ctx.Done():
+					forward = false
+					if streamErr == nil {
+						streamErr = ctx.Err()
+					}
+				}
+			}
 		}
-		costledger.Finish(info, nil)
+		costledger.Finish(info, streamErr)
 		if recordErr := costledger.Record(ctx, info); recordErr != nil {
 			logger.Warnf(ctx, "[cost] failed to record chat stream: %v", recordErr)
 		}
