@@ -1,0 +1,145 @@
+{
+  "total_count": 1,
+  "jobs": [
+    {
+      "id": 102102784640,
+      "run_id": 34238633896,
+      "workflow_name": "RAG Quality Gate",
+      "head_branch": "feat/evaluation-persistence",
+      "run_url": "https://api.github.com/repos/Li-QingS/WeKnora/actions/runs/34238633896",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOUBIu2M8AAAAXxczagA",
+      "head_sha": "d29bc41ac380eb11a9a815de236fcfb161ba8f9b",
+      "url": "https://api.github.com/repos/Li-QingS/WeKnora/actions/jobs/102102784640",
+      "html_url": "https://github.com/Li-QingS/WeKnora/actions/runs/34238633896/job/102102784640",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-08T14:29:55Z",
+      "started_at": "2026-09-08T14:29:58Z",
+      "completed_at": "2026-09-08T14:30:11Z",
+      "name": "evaluation quality gate",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-09-08T14:29:59Z",
+          "completed_at": "2026-09-08T14:30:00Z"
+        },
+        {
+          "name": "Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-09-08T14:30:00Z",
+          "completed_at": "2026-09-08T14:30:03Z"
+        },
+        {
+          "name": "Run actions/setup-go@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-09-08T14:30:03Z",
+          "completed_at": "2026-09-08T14:30:05Z"
+        },
+        {
+          "name": "Build CLI",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-09-08T14:30:05Z",
+          "completed_at": "2026-09-08T14:30:08Z"
+        },
+        {
+          "name": "Resolve evidence scenario",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-09-08T14:30:08Z",
+          "completed_at": "2026-09-08T14:30:08Z"
+        },
+        {
+          "name": "Secrets present",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6,
+          "started_at": "2026-09-08T14:30:08Z",
+          "completed_at": "2026-09-08T14:30:08Z"
+        },
+        {
+          "name": "Run real quality gate",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-09-08T14:30:08Z",
+          "completed_at": "2026-09-08T14:30:08Z"
+        },
+        {
+          "name": "Comparator self-test",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-09-08T14:30:08Z",
+          "completed_at": "2026-09-08T14:30:08Z"
+        },
+        {
+          "name": "Evidence gate — expected pass",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-09-08T14:30:08Z",
+          "completed_at": "2026-09-08T14:30:08Z"
+        },
+        {
+          "name": "Evidence gate — expected Recall failure",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-09-08T14:30:08Z",
+          "completed_at": "2026-09-08T14:30:08Z"
+        },
+        {
+          "name": "Upload evaluation report",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-09-08T14:30:08Z",
+          "completed_at": "2026-09-08T14:30:09Z"
+        },
+        {
+          "name": "Post Run actions/setup-go@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-09-08T14:30:09Z",
+          "completed_at": "2026-09-08T14:30:09Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v6",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-09-08T14:30:09Z",
+          "completed_at": "2026-09-08T14:30:10Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 23,
+          "started_at": "2026-09-08T14:30:10Z",
+          "completed_at": "2026-09-08T14:30:10Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/Li-QingS/WeKnora/check-runs/102102784640",
+      "labels": [
+        "ubuntu-latest"
+      ],
+      "runner_id": 1000000064,
+      "runner_name": "GitHub Actions 1000000064",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ]
+}
