@@ -1,6 +1,6 @@
 # 课题三最终实测证据 Checklist
 
-> 状态：执行中
+> 状态：已完成（2026-09-08）
 
 - [x] 腾讯最新 main 已 fetch 并合并；当前分支包含 `upstream/main`。
 - [x] 解析 fixture 与 Gold 已版本化且 SHA-256 入报告。
