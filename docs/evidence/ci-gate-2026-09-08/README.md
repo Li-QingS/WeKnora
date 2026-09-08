@@ -23,4 +23,13 @@
 - 门槛：`min_value=0.8000`、`max_absolute_drop=0.1000`；实测 `delta=0.4000`，比较器退出 `2`。
 - 截图：`fail-run.png` 的 GitHub error annotation 直接显示上述 baseline/current/delta/threshold/exit code；`fail-job.png` 展示失败步骤。
 
-原始 `*-run.json` 与 `*-jobs.json` 来自 GitHub 公共 Actions API，PNG 来自对应公开 run/job 页面。仓库不包含凭据和模型 Prompt。
+## 恢复后的最终 Pass
+
+- Run ID：`34239666469`
+- URL：https://github.com/Li-QingS/WeKnora/actions/runs/34239666469
+- Commit：`953fff10b90725a6762bc18a6341e92d3b324003`
+- 状态/结论：`completed` / `success`
+- Job：`evaluation quality gate` / `success`
+- 仓库场景文件已恢复为 `pass`，截图：`final-pass-run.png`。
+
+原始 `*-run.json`、`*-jobs.json`、`*-check.json` 和 `*-annotations.json` 来自 GitHub 公共 Actions/Checks API；失败 annotation 是 runner 实际写入的关键比较输出。PNG 来自对应公开 run/job 页面。仓库不包含凭据和模型 Prompt。

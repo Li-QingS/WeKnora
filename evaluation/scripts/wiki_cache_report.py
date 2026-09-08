@@ -9,7 +9,6 @@ import datetime as dt
 import html
 import json
 import statistics
-from collections import defaultdict
 from pathlib import Path
 
 

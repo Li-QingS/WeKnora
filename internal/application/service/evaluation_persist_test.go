@@ -365,7 +365,28 @@ func (s *evalKnowledgeBaseService) DeleteKnowledgeBase(_ context.Context, id str
 
 type evalKnowledgeService struct {
 	interfaces.KnowledgeService
-	err error
+	err  error
+	repo *evalKnowledgeRepository
+}
+
+type evalKnowledgeRepository struct {
+	interfaces.KnowledgeRepository
+}
+
+func (r *evalKnowledgeRepository) GetKnowledgeBatch(
+	_ context.Context,
+	tenantID uint64,
+	ids []string,
+) ([]*types.Knowledge, error) {
+	rows := make([]*types.Knowledge, 0, len(ids))
+	for _, id := range ids {
+		rows = append(rows, &types.Knowledge{
+			ID:              id,
+			TenantID:        tenantID,
+			KnowledgeBaseID: "kb-1",
+		})
+	}
+	return rows, nil
 }
 
 func (s *evalKnowledgeService) CreateKnowledgeFromPassageSync(
@@ -382,6 +403,17 @@ func (s *evalKnowledgeService) CreateKnowledgeFromPassageSync(
 
 func (s *evalKnowledgeService) DeleteKnowledge(context.Context, string) error {
 	return nil
+}
+
+func (s *evalKnowledgeService) DeleteKnowledgeList(context.Context, []string) error {
+	return nil
+}
+
+func (s *evalKnowledgeService) GetRepository() interfaces.KnowledgeRepository {
+	if s.repo != nil {
+		return s.repo
+	}
+	return &evalKnowledgeRepository{}
 }
 
 type evalSessionService struct {

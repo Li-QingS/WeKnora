@@ -3,10 +3,10 @@
 ## 上游同步结论
 
 - 腾讯源仓库：`upstream = git@github.com:Tencent/WeKnora.git`。
-- 本次拉取后的腾讯 `upstream/main`：`647848f3`。
+- 本次再次拉取后的腾讯 `upstream/main`：`8d7298fb`。
 - 当前开发分支：`feat/evaluation-persistence`。
-- 合并提交：`0a2f6cf4 Merge remote-tracking branch 'upstream/main' into feat/evaluation-persistence`。
-- `git merge-base --is-ancestor upstream/main HEAD` 返回成功，`HEAD...upstream/main` 为 `35 0`：当前分支包含腾讯 main 的全部提交，对腾讯 main 不落后；领先部分是本项目的评测开发及合并提交。
+- 最新合并提交：`2390c674 Merge remote-tracking branch 'upstream/main' into feat/evaluation-persistence`。
+- `git merge-base --is-ancestor upstream/main HEAD` 返回成功，`HEAD...upstream/main` 的 behind 为 `0`：当前分支包含腾讯 main 的全部提交；ahead 部分是本项目的评测开发、证据和合并提交。
 - 合并没有冲突。PostgreSQL 自定义迁移保持在 000092–000096，SQLite 自定义迁移保持在 000014–000018，与本次上游迁移序列没有编号冲突。
 
 ## 功能完整性结论
@@ -23,7 +23,7 @@ Wiki 评测当前覆盖：
 - 成功、失败、超时和服务重启后的临时资源清理；
 - 评测中心中的 RAG/Wiki 双页签、任务轮询、刷新恢复、详情和下载。
 
-真实模型、真实 PostgreSQL 服务和浏览器操作仍属于环境验收，详见 `wiki-evaluation/checklist.md` 中未勾选项目。它们需要可用的 Chat/Embedding 凭据和完整服务栈，不能由纯单元测试替代。
+本次又在真实 PostgreSQL、Redis、DocReader 和远程 Chat 模型环境完成同一文档的两次 Wiki 重建，数据库迁移到 96；还完成 8 个应用解析引擎的可用性/质量基线，以及 RAG 门禁的真实 GitHub Actions 成功、Recall 退化失败和恢复成功。EnterpriseRAG 全量 85 文档的 Wiki 评测端到端手工验收仍列在 `wiki-evaluation/checklist.md`，没有用单元测试冒充该项。
 
 ## 本次审查发现并修复的问题
 
@@ -41,6 +41,7 @@ Wiki 评测当前覆盖：
 | 中 | 价格 API 接受负数、混合计费和非 USD，但页面及字段按美元展示 | 校验非负有限价格、计费方式互斥，仅接受 USD；数据库错误与未找到错误使用不同 HTTP 状态 |
 | 低 | 仓库误跟踪 66 MB 的 `wiki-rerun` 二进制和空文件 `=` | 删除两个文件并将 `wiki-rerun` 加入 `.gitignore` |
 | 低 | 合并后 spec 中迁移编号和审批状态过期 | 更新到当前迁移编号，并按用户授权改为自主审查状态 |
+| 中 | 最新上游资源访问重构后，评测持久化测试替身未提供清理所需的 KnowledgeRepository，成功用例异步清理时 panic | 为测试替身补齐租户/知识库归属查询和批量删除接口；隔离包与全仓测试恢复通过 |
 
 ## 技术栈审查
 
@@ -71,14 +72,16 @@ Wiki 评测当前覆盖：
 
 ## 自动化验证
 
-2026-09-08 已通过：
+合并腾讯 `8d7298fb` 并修复测试替身后，2026-09-08 已通过：
 
 - `go test ./... -count=1`
 - `go vet ./...`
 - `go build ./...`
 - `client`: `go test ./... -count=1`、`go vet ./...`
 - `cli`: `go test ./... -count=1`、`go vet ./...`
-- `frontend`: `npm test`（638 项测试）、`npm run type-check`、`npm run build`
+- `frontend`: `npm test`（664 项测试）、`npm run type-check`、`npm run build`、`npm run check-i18n`
 - `git diff --check`
+
+另外完成了真实运行证据：解析基线报告、Wiki 缓存冷/热报告，以及 GitHub Actions `success → Recall failure → success` 三次运行。对应原始数据、图表、API 元数据和截图位于 `docs/evidence/`。
 
 Vite 仍报告既有的大 chunk 提示，但构建成功；该提示与本次评测功能的正确性无关，适合单独做前端拆包优化。

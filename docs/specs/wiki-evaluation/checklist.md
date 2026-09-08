@@ -113,7 +113,7 @@
 
 - [x] **C52：HTTP 和权限测试通过。** （验证：相关包与 `go test ./... -count=1` 均通过）
 
-- [x] **C53：前端测试、类型检查和生产构建通过。** （验证：2026-09-08 `npm test` 638 项测试通过，`npm run type-check` 与 `npm run build` 通过）
+- [x] **C53：前端测试、类型检查和生产构建通过。** （验证：合并最新上游并执行 `npm ci` 后，2026-09-08 `npm test` 664 项测试通过，`npm run type-check` 与 `npm run build` 通过）
 
 - [x] **C54：全仓 Go 测试和构建通过。** （验证：`go test ./... -count=1` 与 `go build ./...` 均通过）
 
@@ -143,7 +143,7 @@
 
 - [ ] **S4：没有扩展到任意用户数据集。** Wiki 数据集选择器首期只列出带有效 Gold 的 EnterpriseRAG，不提供上传 Gold 或选择正式 KB 的入口。（验证：观察选择器和启动 API 校验）
 
-- [ ] **S5：没有修改 CI 门禁。** `.github/workflows` 和现有评测门禁配置没有本功能改动，Wiki 评测只由用户从 API/页面主动启动。（验证：`git diff --name-only -- .github/workflows evaluation/configs` 无输出）
+- [x] **S5：Wiki 评测没有接入 CI 门禁。** Wiki 评测仍只由用户从 API/页面主动启动；RAG workflow 新增的 `pass/degraded` 仅用于本次 Recall 门禁实测证据，不调用 Wiki 评测。（验证：检查 `.github/workflows/rag-quality-gate.yml` 的全部步骤）
 
 ## AC 覆盖索引
 

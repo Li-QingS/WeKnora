@@ -1,0 +1,10 @@
+{
+  "id": 102105283184,
+  "name": "evaluation quality gate",
+  "head_sha": "3e4ee338a5bc716a856293636a371e8084473fe4",
+  "status": "completed",
+  "conclusion": "failure",
+  "started_at": "2026-09-08T14:36:44Z",
+  "completed_at": "2026-09-08T14:37:04Z",
+  "html_url": "https://github.com/Li-QingS/WeKnora/actions/runs/34239374350/job/102105283184"
+}
