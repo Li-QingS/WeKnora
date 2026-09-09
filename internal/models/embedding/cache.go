@@ -17,21 +17,25 @@ type EmbeddingCache interface {
 }
 
 var (
-	cacheMu            sync.RWMutex
-	globalCache        EmbeddingCache
-	statsHits          atomic.Int64
-	statsMisses        atomic.Int64
-	statsProviderCalls atomic.Int64
-	modelStatsMu       sync.Mutex
-	modelStats         = map[string]*modelCacheStats{}
+	cacheMu             sync.RWMutex
+	globalCache         EmbeddingCache
+	statsHits           atomic.Int64
+	statsNormalizedHits atomic.Int64
+	statsCoalesced      atomic.Int64
+	statsMisses         atomic.Int64
+	statsProviderCalls  atomic.Int64
+	modelStatsMu        sync.Mutex
+	modelStats          = map[string]*modelCacheStats{}
 )
 
 type modelCacheStats struct {
-	modelID       string
-	modelName     string
-	hits          int64
-	misses        int64
-	providerCalls int64
+	modelID        string
+	modelName      string
+	hits           int64
+	normalizedHits int64
+	coalesced      int64
+	misses         int64
+	providerCalls  int64
 }
 
 // SetEmbeddingCache installs the process-wide embedding cache. Tests may
@@ -52,20 +56,24 @@ func GetEmbeddingCache() EmbeddingCache {
 // CacheStats returns process-level hit/miss counters.
 func CacheStats() types.EmbeddingCacheStats {
 	stats := types.EmbeddingCacheStats{
-		Enabled:       GetEmbeddingCache() != nil,
-		Hits:          statsHits.Load(),
-		Misses:        statsMisses.Load(),
-		ProviderCalls: statsProviderCalls.Load(),
+		Enabled:           GetEmbeddingCache() != nil,
+		Hits:              statsHits.Load(),
+		NormalizedHits:    statsNormalizedHits.Load(),
+		CoalescedRequests: statsCoalesced.Load(),
+		Misses:            statsMisses.Load(),
+		ProviderCalls:     statsProviderCalls.Load(),
 	}
 	modelStatsMu.Lock()
 	defer modelStatsMu.Unlock()
 	for _, model := range modelStats {
 		stats.Models = append(stats.Models, types.EmbeddingCacheModelStats{
-			ModelID:       model.modelID,
-			ModelName:     model.modelName,
-			Hits:          model.hits,
-			Misses:        model.misses,
-			ProviderCalls: model.providerCalls,
+			ModelID:           model.modelID,
+			ModelName:         model.modelName,
+			Hits:              model.hits,
+			NormalizedHits:    model.normalizedHits,
+			CoalescedRequests: model.coalesced,
+			Misses:            model.misses,
+			ProviderCalls:     model.providerCalls,
 		})
 	}
 	sort.Slice(stats.Models, func(i, j int) bool {
@@ -80,6 +88,8 @@ func CacheStats() types.EmbeddingCacheStats {
 // ResetCacheStats clears hit/miss counters (used by tests and demos).
 func ResetCacheStats() {
 	statsHits.Store(0)
+	statsNormalizedHits.Store(0)
+	statsCoalesced.Store(0)
 	statsMisses.Store(0)
 	statsProviderCalls.Store(0)
 	modelStatsMu.Lock()
@@ -90,6 +100,16 @@ func ResetCacheStats() {
 func recordCacheHit(modelID, modelName string) {
 	statsHits.Add(1)
 	recordModelStat(modelID, modelName, func(s *modelCacheStats) { s.hits++ })
+}
+
+func recordNormalizedCacheHit(modelID, modelName string) {
+	statsNormalizedHits.Add(1)
+	recordModelStat(modelID, modelName, func(s *modelCacheStats) { s.normalizedHits++ })
+}
+
+func recordCoalescedRequest(modelID, modelName string) {
+	statsCoalesced.Add(1)
+	recordModelStat(modelID, modelName, func(s *modelCacheStats) { s.coalesced++ })
 }
 
 func recordCacheMiss(modelID, modelName string) {

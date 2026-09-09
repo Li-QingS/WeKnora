@@ -28,5 +28,7 @@ func TestEmbeddingCacheStats(t *testing.T) {
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"hits"`)
+	assert.Contains(t, w.Body.String(), `"normalized_hits"`)
+	assert.Contains(t, w.Body.String(), `"coalesced_requests"`)
 	assert.Contains(t, w.Body.String(), `"misses"`)
 }

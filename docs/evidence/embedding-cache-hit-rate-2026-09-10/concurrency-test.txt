@@ -1,0 +1,8 @@
+=== RUN   TestCachedEmbedderCoalescesConcurrentColdRequests
+    cache_wrapper_test.go:393: callers=32 provider_calls=1 coalesced=31 reduction=96.875%
+--- PASS: TestCachedEmbedderCoalescesConcurrentColdRequests (0.03s)
+=== RUN   TestCachedEmbedderCoalescesConcurrentBatches
+    cache_wrapper_test.go:457: callers=16 inputs_per_batch=2 provider_calls=1 coalesced=30 call_reduction=93.750%
+--- PASS: TestCachedEmbedderCoalescesConcurrentBatches (0.03s)
+PASS
+ok  	github.com/Tencent/WeKnora/internal/models/embedding	1.347s

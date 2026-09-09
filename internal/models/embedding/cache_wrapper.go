@@ -25,83 +25,145 @@ type cachedEmbedder struct {
 }
 
 func (c *cachedEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	key := c.keyFor(ctx, text)
-	if vector, ok, err := c.cache.Get(ctx, &key); err == nil && ok && c.validVector(vector) {
-		recordCacheHit(c.modelID, c.modelName)
-		_ = c.cache.IncrementHit(ctx, &key)
-		return vector, nil
+	lookup := c.lookupFor(ctx, text)
+	flightKey := c.flightKey(lookup.key)
+	flight, leader := embeddingCacheFlights.claim(flightKey)
+	if !leader {
+		vector, err := flight.wait(ctx)
+		if err == nil {
+			recordCoalescedRequest(c.modelID, c.modelName)
+		}
+		return vector, err
 	}
+
+	if vector, ok, primary := c.lookupCache(ctx, &lookup); ok {
+		recordCacheHit(c.modelID, c.modelName)
+		if primary && lookup.normalized {
+			recordNormalizedCacheHit(c.modelID, c.modelName)
+		}
+		embeddingCacheFlights.complete(flightKey, flight, vector, nil)
+		return append([]float32(nil), vector...), nil
+	}
+
 	recordCacheMiss(c.modelID, c.modelName)
-	vector, err := c.inner.Embed(ctx, text)
+	vector, err := c.inner.Embed(ctx, lookup.text)
 	recordProviderCall(c.modelID, c.modelName)
 	if err != nil {
+		embeddingCacheFlights.complete(flightKey, flight, nil, err)
 		return nil, err
 	}
 	if err := c.validateVector(vector); err != nil {
+		embeddingCacheFlights.complete(flightKey, flight, nil, err)
 		return nil, err
 	}
-	_ = c.cache.Set(ctx, &key, vector)
-	return vector, nil
+	_ = c.cache.Set(ctx, &lookup.key, vector)
+	embeddingCacheFlights.complete(flightKey, flight, vector, nil)
+	return append([]float32(nil), vector...), nil
 }
 
 func (c *cachedEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]float32, error) {
 	results := make([][]float32, len(texts))
 	type batchGroup struct {
-		key     types.EmbeddingCacheKey
-		text    string
-		indexes []int
+		lookup          embeddingCacheLookup
+		indexes         []int
+		normalizedCount int
+		flightKey       string
+		flight          *embeddingCacheFlight
+		leader          bool
 	}
 	groups := make([]*batchGroup, 0, len(texts))
 	byHash := make(map[string]*batchGroup, len(texts))
 	for i, text := range texts {
-		key := c.keyFor(ctx, text)
-		group, ok := byHash[key.TextHash]
+		lookup := c.lookupFor(ctx, text)
+		group, ok := byHash[lookup.key.TextHash]
 		if !ok {
-			group = &batchGroup{key: key, text: text}
-			byHash[key.TextHash] = group
+			group = &batchGroup{lookup: lookup}
+			byHash[lookup.key.TextHash] = group
 			groups = append(groups, group)
+		} else {
+			group.lookup.legacyKeys = appendUniqueCacheKeys(group.lookup.legacyKeys, lookup.legacyKeys...)
 		}
 		group.indexes = append(group.indexes, i)
+		if lookup.normalized {
+			group.normalizedCount++
+		}
 	}
 
-	missing := make([]*batchGroup, 0, len(groups))
+	missingLeaders := make([]*batchGroup, 0, len(groups))
 	missingTexts := make([]string, 0, len(groups))
-	for _, group := range groups {
-		vector, ok, err := c.cache.Get(ctx, &group.key)
-		if err == nil && ok && c.validVector(vector) {
-			for _, index := range group.indexes {
-				recordCacheHit(c.modelID, c.modelName)
-				results[index] = vector
-			}
-			_ = c.cache.IncrementHit(ctx, &group.key)
+	flightKeys := make([]string, len(groups))
+	for i, group := range groups {
+		group.flightKey = c.flightKey(group.lookup.key)
+		flightKeys[i] = group.flightKey
+	}
+	flights, leaders := embeddingCacheFlights.claimMany(flightKeys)
+	for i, group := range groups {
+		group.flight, group.leader = flights[i], leaders[i]
+		if !group.leader {
 			continue
 		}
-		for range group.indexes {
-			recordCacheMiss(c.modelID, c.modelName)
+		vector, ok, primary := c.lookupCache(ctx, &group.lookup)
+		if ok {
+			for _, index := range group.indexes {
+				recordCacheHit(c.modelID, c.modelName)
+				results[index] = append([]float32(nil), vector...)
+			}
+			if primary {
+				for range group.normalizedCount {
+					recordNormalizedCacheHit(c.modelID, c.modelName)
+				}
+			}
+			embeddingCacheFlights.complete(group.flightKey, group.flight, vector, nil)
+			continue
 		}
-		missing = append(missing, group)
-		missingTexts = append(missingTexts, group.text)
+		recordCacheMiss(c.modelID, c.modelName)
+		for range len(group.indexes) - 1 {
+			recordCoalescedRequest(c.modelID, c.modelName)
+		}
+		missingLeaders = append(missingLeaders, group)
+		missingTexts = append(missingTexts, group.lookup.text)
 	}
-	if len(missing) == 0 {
-		return results, nil
+	if len(missingLeaders) > 0 {
+		vectors, err := c.inner.BatchEmbed(ctx, missingTexts)
+		recordProviderCall(c.modelID, c.modelName)
+		if err == nil && len(vectors) != len(missingLeaders) {
+			err = fmt.Errorf("embedding provider returned %d vectors for %d inputs", len(vectors), len(missingLeaders))
+		}
+		if err == nil {
+			for i := range missingLeaders {
+				if validationErr := c.validateVector(vectors[i]); validationErr != nil {
+					err = fmt.Errorf("embedding result %d: %w", i, validationErr)
+					break
+				}
+			}
+		}
+		if err != nil {
+			for _, group := range missingLeaders {
+				embeddingCacheFlights.complete(group.flightKey, group.flight, nil, err)
+			}
+			return nil, err
+		}
+		for i, group := range missingLeaders {
+			for _, index := range group.indexes {
+				results[index] = append([]float32(nil), vectors[i]...)
+			}
+			_ = c.cache.Set(ctx, &group.lookup.key, vectors[i])
+			embeddingCacheFlights.complete(group.flightKey, group.flight, vectors[i], nil)
+		}
 	}
 
-	vectors, err := c.inner.BatchEmbed(ctx, missingTexts)
-	recordProviderCall(c.modelID, c.modelName)
-	if err != nil {
-		return nil, err
-	}
-	if len(vectors) != len(missing) {
-		return nil, fmt.Errorf("embedding provider returned %d vectors for %d inputs", len(vectors), len(missing))
-	}
-	for i, group := range missing {
-		if err := c.validateVector(vectors[i]); err != nil {
-			return nil, fmt.Errorf("embedding result %d: %w", i, err)
+	for _, group := range groups {
+		if group.leader {
+			continue
+		}
+		vector, err := group.flight.wait(ctx)
+		if err != nil {
+			return nil, err
 		}
 		for _, index := range group.indexes {
-			results[index] = vectors[i]
+			recordCoalescedRequest(c.modelID, c.modelName)
+			results[index] = append([]float32(nil), vector...)
 		}
-		_ = c.cache.Set(ctx, &group.key, vectors[i])
 	}
 	return results, nil
 }
@@ -118,6 +180,39 @@ func (c *cachedEmbedder) GetDimensions() int   { return c.inner.GetDimensions() 
 func (c *cachedEmbedder) GetModelID() string   { return c.inner.GetModelID() }
 
 func (c *cachedEmbedder) keyFor(ctx context.Context, text string) types.EmbeddingCacheKey {
+	return c.lookupFor(ctx, text).key
+}
+
+func (c *cachedEmbedder) legacyKeyFor(ctx context.Context, text string) types.EmbeddingCacheKey {
+	return c.keyForText(ctx, text)
+}
+
+type embeddingCacheLookup struct {
+	key        types.EmbeddingCacheKey
+	legacyKeys []types.EmbeddingCacheKey
+	text       string
+	normalized bool
+}
+
+func (c *cachedEmbedder) lookupFor(ctx context.Context, text string) embeddingCacheLookup {
+	canonical := CanonicalizeCacheText(text)
+	// Keep the provider's legacy behavior for an all-whitespace non-empty
+	// value instead of turning it into a new empty-input error path.
+	if canonical == "" && text != "" {
+		canonical = text
+	}
+	lookup := embeddingCacheLookup{
+		key:        c.keyForText(ctx, canonical),
+		text:       canonical,
+		normalized: canonical != text,
+	}
+	if lookup.normalized {
+		lookup.legacyKeys = []types.EmbeddingCacheKey{c.keyForText(ctx, text)}
+	}
+	return lookup
+}
+
+func (c *cachedEmbedder) keyForText(ctx context.Context, text string) types.EmbeddingCacheKey {
 	tenantID := c.tenantID
 	if t, ok := types.TenantIDFromContext(ctx); ok && t > 0 {
 		tenantID = t
@@ -129,6 +224,56 @@ func (c *cachedEmbedder) keyFor(ctx context.Context, text string) types.Embeddin
 		Dimension: c.inner.GetDimensions(),
 		TextHash:  hex.EncodeToString(sum[:]),
 	}
+}
+
+// lookupCache checks the canonical key first, then exact legacy keys for
+// non-canonical inputs. A legacy hit is promoted lazily so later formatting
+// variants need only one lookup. The third return value reports a primary-key
+// hit, which lets metrics count true normalization wins without claiming a
+// legacy exact hit as an optimization.
+func (c *cachedEmbedder) lookupCache(
+	ctx context.Context,
+	lookup *embeddingCacheLookup,
+) ([]float32, bool, bool) {
+	if lookup == nil {
+		return nil, false, false
+	}
+	if vector, ok, err := c.cache.Get(ctx, &lookup.key); err == nil && ok && c.validVector(vector) {
+		_ = c.cache.IncrementHit(ctx, &lookup.key)
+		return vector, true, true
+	}
+	for i := range lookup.legacyKeys {
+		legacy := &lookup.legacyKeys[i]
+		if vector, ok, err := c.cache.Get(ctx, legacy); err == nil && ok && c.validVector(vector) {
+			_ = c.cache.IncrementHit(ctx, legacy)
+			_ = c.cache.Set(ctx, &lookup.key, vector)
+			return vector, true, false
+		}
+	}
+	return nil, false, false
+}
+
+func (c *cachedEmbedder) flightKey(key types.EmbeddingCacheKey) string {
+	return fmt.Sprintf("%d\x00%s\x00%d\x00%s", key.TenantID, key.ModelID, key.Dimension, key.TextHash)
+}
+
+func appendUniqueCacheKeys(
+	destination []types.EmbeddingCacheKey,
+	keys ...types.EmbeddingCacheKey,
+) []types.EmbeddingCacheKey {
+	for _, key := range keys {
+		found := false
+		for _, existing := range destination {
+			if existing == key {
+				found = true
+				break
+			}
+		}
+		if !found {
+			destination = append(destination, key)
+		}
+	}
+	return destination
 }
 
 func (c *cachedEmbedder) validVector(vector []float32) bool {

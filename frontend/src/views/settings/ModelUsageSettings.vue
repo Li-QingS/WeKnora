@@ -143,25 +143,34 @@
             {{ cacheEnabled ? '已开启' : '未开启' }}
           </t-tag>
         </div>
+        <p class="cache-metric-hint">
+          复用率包含 SQL 命中和请求合并；格式归一命中是由 BOM、换行或首尾空白统一后新增的命中。
+        </p>
         <table class="usage-table">
           <thead>
             <tr>
               <th>模型</th>
+              <th>有效复用率</th>
               <th>复用次数</th>
+              <th>格式归一命中</th>
+              <th>请求合并</th>
               <th>未命中次数</th>
               <th>Provider 调用</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="cacheStats && !cacheStats.enabled">
-              <td colspan="4" class="empty-cell">Embedding 缓存未开启</td>
+              <td colspan="7" class="empty-cell">Embedding 缓存未开启</td>
             </tr>
             <tr v-else-if="cacheStats && embeddingModels.length === 0">
-              <td colspan="4" class="empty-cell">暂无数据</td>
+              <td colspan="7" class="empty-cell">暂无数据</td>
             </tr>
             <tr v-for="model in embeddingModels" :key="model.model_id">
               <td>{{ model.model_name || model.model_id }}</td>
+              <td>{{ effectiveEmbeddingReuseRate(model) }}</td>
               <td>{{ model.hits }}</td>
+              <td>{{ model.normalized_hits || 0 }}</td>
+              <td>{{ model.coalesced_requests || 0 }}</td>
               <td>{{ model.misses }}</td>
               <td>{{ model.provider_calls }}</td>
             </tr>
@@ -287,6 +296,13 @@ function chatCacheRate(item: ModelCallSummaryItem): string {
   const denominator = item.cache_read_tokens + item.cache_miss_tokens
   if (denominator <= 0) return '-'
   return `${((item.cache_read_tokens / denominator) * 100).toFixed(1)}%`
+}
+
+function effectiveEmbeddingReuseRate(model: NonNullable<EmbeddingCacheStats['models']>[number]): string {
+  const coalesced = model.coalesced_requests || 0
+  const total = model.hits + model.misses + coalesced
+  if (total <= 0) return '-'
+  return `${(((model.hits + coalesced) / total) * 100).toFixed(1)}%`
 }
 
 function formatCost(value: number | null | undefined): string {
@@ -529,6 +545,12 @@ onMounted(async () => {
 .usage-section__head h3 {
   margin: 0;
   font-size: 14px;
+}
+
+.cache-metric-hint {
+  margin: -3px 0 10px;
+  color: var(--td-text-color-secondary, #666);
+  font-size: 12px;
 }
 
 .usage-table {

@@ -33,20 +33,25 @@ func (EmbeddingCacheEntry) TableName() string {
 
 // EmbeddingCacheStats exposes process-level hit/miss counters.
 type EmbeddingCacheStats struct {
-	Enabled       bool                       `json:"enabled"`
-	Hits          int64                      `json:"hits"`
-	Misses        int64                      `json:"misses"`
-	ProviderCalls int64                      `json:"provider_calls"`
-	Models        []EmbeddingCacheModelStats `json:"models"`
+	Enabled           bool                       `json:"enabled"`
+	Hits              int64                      `json:"hits"`
+	NormalizedHits    int64                      `json:"normalized_hits"`
+	CoalescedRequests int64                      `json:"coalesced_requests"`
+	Misses            int64                      `json:"misses"`
+	ProviderCalls     int64                      `json:"provider_calls"`
+	Models            []EmbeddingCacheModelStats `json:"models"`
 }
 
 // EmbeddingCacheModelStats is the per-model portion of the process cache
-// counters. Hits/misses count text lookups; ProviderCalls counts actual model
-// requests (one batch request can cover several misses).
+// counters. Hits count persistent lookups, Misses count unique uncached inputs,
+// CoalescedRequests counts logical inputs served by an in-flight request or
+// batch deduplication, and ProviderCalls counts model HTTP requests.
 type EmbeddingCacheModelStats struct {
-	ModelID       string `json:"model_id"`
-	ModelName     string `json:"model_name"`
-	Hits          int64  `json:"hits"`
-	Misses        int64  `json:"misses"`
-	ProviderCalls int64  `json:"provider_calls"`
+	ModelID           string `json:"model_id"`
+	ModelName         string `json:"model_name"`
+	Hits              int64  `json:"hits"`
+	NormalizedHits    int64  `json:"normalized_hits"`
+	CoalescedRequests int64  `json:"coalesced_requests"`
+	Misses            int64  `json:"misses"`
+	ProviderCalls     int64  `json:"provider_calls"`
 }

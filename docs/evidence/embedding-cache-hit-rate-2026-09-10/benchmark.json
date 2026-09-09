@@ -1,0 +1,74 @@
+{
+  "generated_at": "2026-09-09T17:35:48.516970882Z",
+  "dataset": "dataset/enterprise_rag",
+  "base_inputs": 135,
+  "corpus_inputs": 85,
+  "query_inputs": 50,
+  "workload_sha256": "da0587331aeddc0c3423847e0ac8fbcaa5bb03626ba06e20b5347ead97059a0c",
+  "scenario": "cold import, exact replay, then BOM/CRLF/line-tail/outer-whitespace drift replay",
+  "baseline": {
+    "name": "raw exact key",
+    "requests": 405,
+    "hits": 135,
+    "misses": 270,
+    "hit_rate": 0.3333333333333333,
+    "provider_inputs": 270,
+    "phases": [
+      {
+        "name": "cold_import",
+        "requests": 135,
+        "hits": 0,
+        "misses": 135,
+        "hit_rate": 0
+      },
+      {
+        "name": "exact_replay",
+        "requests": 135,
+        "hits": 135,
+        "misses": 0,
+        "hit_rate": 1
+      },
+      {
+        "name": "editor_format_drift_replay",
+        "requests": 135,
+        "hits": 0,
+        "misses": 135,
+        "hit_rate": 0
+      }
+    ]
+  },
+  "optimized": {
+    "name": "conservative canonical key",
+    "requests": 405,
+    "hits": 270,
+    "misses": 135,
+    "hit_rate": 0.6666666666666666,
+    "provider_inputs": 135,
+    "phases": [
+      {
+        "name": "cold_import",
+        "requests": 135,
+        "hits": 0,
+        "misses": 135,
+        "hit_rate": 0
+      },
+      {
+        "name": "exact_replay",
+        "requests": 135,
+        "hits": 135,
+        "misses": 0,
+        "hit_rate": 1
+      },
+      {
+        "name": "editor_format_drift_replay",
+        "requests": 135,
+        "hits": 135,
+        "misses": 0,
+        "hit_rate": 1
+      }
+    ]
+  },
+  "hit_rate_gain_points": 33.33333333333333,
+  "provider_inputs_saved": 135,
+  "provider_input_reduction": 0.5
+}

@@ -58,12 +58,16 @@ export interface ModelPrice {
 export interface EmbeddingCacheStats {
   enabled: boolean
   hits: number
+  normalized_hits: number
+  coalesced_requests: number
   misses: number
   provider_calls: number
   models?: Array<{
     model_id: string
     model_name: string
     hits: number
+    normalized_hits: number
+    coalesced_requests: number
     misses: number
     provider_calls: number
   }>
