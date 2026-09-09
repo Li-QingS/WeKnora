@@ -53,6 +53,13 @@ go test -race ./internal/models/embedding \
 
 固定数据结果见 `benchmark.json`、`benchmark.md` 和 `concurrency-test.txt`。
 
+## 验证
+
+- 后端：`go test ./...`、`go vet ./...`、`go build ./...`。
+- 并发：`go test -race ./internal/models/embedding -count=1`。
+- Client 与 CLI：各自执行 `go test -count=1 ./...` 和 `go vet ./...`。
+- 前端：781 项测试、`npm run type-check`、`npm run build`、`npm run check-i18n`。
+
 ## 回退
 
 远端 annotated tag `cache-hit-baseline-20260910` 指向优化前提交 `e4c51bf8`。查看或建立回退分支：
@@ -62,4 +69,8 @@ git switch --detach cache-hit-baseline-20260910
 git switch -c rollback/cache-hit-baseline cache-hit-baseline-20260910
 ```
 
-本轮没有数据库迁移。若只撤销本轮代码而保留后续提交，应在最终提交后使用 `git revert <本轮优化提交>`。
+本轮没有数据库迁移。若只撤销本轮代码而保留后续提交，可执行：
+
+```bash
+git revert 13ea76a3
+```
