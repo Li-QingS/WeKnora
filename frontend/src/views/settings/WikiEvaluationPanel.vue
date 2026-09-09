@@ -77,7 +77,14 @@
           <template #stage="{ row }">{{ stageLabel(row.stage) }}</template>
           <template #created_at="{ row }">{{ formatDate(row.created_at) }}</template>
           <template #action="{ row }">
-            <t-button variant="text" size="small" :disabled="row.status < 2" @click.stop="remove(row.id)">删除</t-button>
+            <t-popconfirm
+              :content="`确定删除 Wiki 评测 ${row.id} 吗？`"
+              theme="danger"
+              :disabled="row.status < 2"
+              @confirm="remove(row.id)"
+            >
+              <t-button variant="text" size="small" :disabled="row.status < 2" @click.stop>删除</t-button>
+            </t-popconfirm>
           </template>
         </t-table>
         <t-pagination v-model="page" v-model:page-size="pageSize" :total="total" @change="loadRuns" />
@@ -278,6 +285,7 @@ function formatDate(value: string) { return value ? new Date(value).toLocaleStri
 
 async function loadOptions() {
   optionsLoading.value = true
+  optionsError.value = ''
   try {
     const [datasetList, modelList] = await Promise.all([listWikiEvaluationDatasets(), listModels()])
     datasets.value = datasetList
@@ -290,6 +298,7 @@ async function loadOptions() {
 }
 async function loadRuns() {
   loading.value = true
+  listError.value = ''
   try { const result = await listWikiEvaluationRuns(page.value, pageSize.value); runs.value = result.data; total.value = result.total }
   catch (error: any) { listError.value = error?.message || '加载 Wiki 评测历史失败' }
   finally { loading.value = false }
@@ -328,15 +337,18 @@ async function pollRun(runId: string) {
   }
 }
 async function openDetail(context: { row: WikiEvaluationRun }) {
+  listError.value = ''
   try { detail.value = await getWikiEvaluation(context.row.id) }
   catch (error: any) { listError.value = error?.message || '加载详情失败' }
 }
 async function remove(id: string) {
+  listError.value = ''
   try { await deleteWikiEvaluation(id); if (detail.value?.run.id === id) detail.value = null; await loadRuns() }
   catch (error: any) { listError.value = error?.message || '删除 Wiki 评测失败' }
 }
 async function download(format: 'json' | 'markdown') {
   if (!detail.value) return
+  listError.value = ''
   try {
     const blob = await downloadWikiEvaluationReport(detail.value.run.id, format)
     const url = URL.createObjectURL(blob); const link = document.createElement('a')

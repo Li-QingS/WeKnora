@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strings"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/utils"
 )
 
 // cachedEmbedder reuses embedding vectors for identical inputs.
@@ -172,15 +174,42 @@ func embeddingCacheNamespace(config Config) string {
 		SupportsDimensionOverride: config.SupportsDimensionOverride,
 		Provider:                  config.Provider,
 		ExtraConfig:               config.ExtraConfig,
-		CustomHeaders:             config.CustomHeaders,
+		CustomHeaders:             effectiveEmbeddingHeaders(config.CustomHeaders),
 	})
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
 }
 
+// effectiveEmbeddingHeaders returns only headers that can reach the provider.
+// Reserved authentication and protocol headers are ignored by ApplyCustomHeaders,
+// so including them here would split identical vectors into separate cache keys.
+func effectiveEmbeddingHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	filtered := make(map[string]string, len(headers))
+	for key, value := range headers {
+		name := strings.TrimSpace(key)
+		if name == "" || utils.IsReservedHeader(name) {
+			continue
+		}
+		filtered[name] = value
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return filtered
+}
+
 func wrapEmbeddingCache(e Embedder, tenantID uint64, pooler EmbedderPooler, namespaces ...string) Embedder {
 	cache := GetEmbeddingCache()
 	if cache == nil || e == nil {
+		return e
+	}
+	// A persistent cache key must identify both the tenant and the exact vector
+	// space. Temporary connection tests and incomplete model configurations do
+	// not provide that identity, so they deliberately bypass persistence.
+	if tenantID == 0 || strings.TrimSpace(e.GetModelID()) == "" || e.GetDimensions() <= 0 {
 		return e
 	}
 	namespace := ""

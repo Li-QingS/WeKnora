@@ -226,6 +226,63 @@ func TestEmbeddingCacheNamespaceTracksVectorSettings(t *testing.T) {
 	}
 }
 
+func TestEmbeddingCacheNamespaceIgnoresReservedHeaders(t *testing.T) {
+	base := Config{
+		BaseURL:       "https://one.example/v1",
+		ModelName:     "embed-1",
+		Dimensions:    1,
+		CustomHeaders: map[string]string{"X-Route": "blue", "Authorization": "secret-one"},
+	}
+	changedCredential := base
+	changedCredential.CustomHeaders = map[string]string{"X-Route": "blue", "Authorization": "secret-two"}
+	changedRoute := base
+	changedRoute.CustomHeaders = map[string]string{"X-Route": "green", "Authorization": "secret-one"}
+
+	if embeddingCacheNamespace(base) != embeddingCacheNamespace(changedCredential) {
+		t.Fatal("cache namespace must ignore reserved headers that never reach the provider")
+	}
+	if embeddingCacheNamespace(base) == embeddingCacheNamespace(changedRoute) {
+		t.Fatal("cache namespace must change with effective provider headers")
+	}
+}
+
+type identityEmbedder struct {
+	*countingEmbedder
+	modelID   string
+	dimension int
+}
+
+func (e *identityEmbedder) GetModelID() string { return e.modelID }
+func (e *identityEmbedder) GetDimensions() int { return e.dimension }
+
+func TestWrapEmbeddingCacheRequiresStableIdentity(t *testing.T) {
+	SetEmbeddingCache(newFakeCache())
+	defer SetEmbeddingCache(nil)
+
+	tests := []struct {
+		name      string
+		tenantID  uint64
+		modelID   string
+		dimension int
+	}{
+		{name: "missing tenant", modelID: "model-1", dimension: 1},
+		{name: "missing model id", tenantID: 7, dimension: 1},
+		{name: "missing dimension", tenantID: 7, modelID: "model-1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inner := &identityEmbedder{
+				countingEmbedder: &countingEmbedder{},
+				modelID:          tt.modelID,
+				dimension:        tt.dimension,
+			}
+			if got := wrapEmbeddingCache(inner, tt.tenantID, nil); got != inner {
+				t.Fatal("expected passthrough without a stable cache identity")
+			}
+		})
+	}
+}
+
 func TestWrapEmbeddingCacheNoCachePassthrough(t *testing.T) {
 	SetEmbeddingCache(nil)
 	inner := &countingEmbedder{}
