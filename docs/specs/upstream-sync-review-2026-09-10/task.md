@@ -7,4 +7,4 @@
 - [x] T5 review Wiki/RAG 执行、持久化、权限、资源清理和前端结果展示。
 - [x] T6 修复确定问题并增加直接验证问题的测试。
 - [x] T7 执行数据库迁移、前端和 Go 全仓回归。
-- [ ] T8 更新 review 与 checklist，提交并推送。
+- [x] T8 更新 review 与 checklist，提交并推送。
