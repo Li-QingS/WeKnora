@@ -7,10 +7,36 @@
       </div>
     </div>
 
-    <t-tabs v-model="activeEvaluator" class="evaluation-tabs">
-      <t-tab-panel value="rag" label="RAG 问答评测" />
-      <t-tab-panel value="wiki" label="Wiki 评测" />
-    </t-tabs>
+    <div class="evaluator-switch" role="group" aria-label="评测类型">
+      <button
+        type="button"
+        class="evaluator-option"
+        :class="{ 'evaluator-option--active': activeEvaluator === 'rag' }"
+        :aria-pressed="activeEvaluator === 'rag'"
+        @click="activeEvaluator = 'rag'"
+      >
+        <span class="evaluator-option__code">RAG</span>
+        <span class="evaluator-option__body">
+          <strong>问答效果评测</strong>
+          <small>检索命中、重排与回答质量</small>
+        </span>
+        <span class="evaluator-option__metrics">Recall · MRR · ROUGE-L</span>
+      </button>
+      <button
+        type="button"
+        class="evaluator-option"
+        :class="{ 'evaluator-option--active': activeEvaluator === 'wiki' }"
+        :aria-pressed="activeEvaluator === 'wiki'"
+        @click="activeEvaluator = 'wiki'"
+      >
+        <span class="evaluator-option__code evaluator-option__code--wiki">WIKI</span>
+        <span class="evaluator-option__body">
+          <strong>知识图谱评测</strong>
+          <small>实体、概念覆盖与页面连接结构</small>
+        </span>
+        <span class="evaluator-option__metrics">Coverage · Precision · Recall · F1</span>
+      </button>
+    </div>
 
     <div v-show="activeEvaluator === 'rag'" class="evaluation-panel">
 
@@ -708,6 +734,83 @@ onMounted(async () => {
   color: var(--td-text-color-secondary, #666);
 }
 
+.evaluator-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.evaluator-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  align-items: center;
+  min-width: 0;
+  padding: 15px 16px;
+  border: 1px solid var(--td-component-stroke, #e7e7e7);
+  border-radius: 10px;
+  color: var(--td-text-color-primary, #333);
+  background: var(--td-bg-color-container, #fff);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+
+.evaluator-option:hover {
+  border-color: var(--td-brand-color-5, #5b8ff9);
+}
+
+.evaluator-option--active {
+  border-color: var(--td-brand-color, #0052d9);
+  background: var(--td-brand-color-light, #f2f3ff);
+  box-shadow: 0 0 0 1px var(--td-brand-color, #0052d9);
+}
+
+.evaluator-option__code {
+  grid-row: 1 / 3;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 9px;
+  color: var(--td-brand-color, #0052d9);
+  background: var(--td-brand-color-light, #eef4ff);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.evaluator-option__code--wiki {
+  color: var(--td-warning-color, #d99000);
+  background: var(--td-warning-color-1, #fff2d5);
+}
+
+.evaluator-option__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.evaluator-option__body strong {
+  font-size: 14px;
+}
+
+.evaluator-option__body small,
+.evaluator-option__metrics {
+  color: var(--td-text-color-secondary, #666);
+  font-size: 12px;
+}
+
+.evaluator-option__metrics {
+  grid-column: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .evaluation-run {
   margin-bottom: 24px;
   padding: 18px;
@@ -954,6 +1057,10 @@ onMounted(async () => {
 }
 
 @media (max-width: 720px) {
+  .evaluator-switch {
+    grid-template-columns: 1fr;
+  }
+
   .evaluation-run__form,
   .chunking-grid {
     grid-template-columns: 1fr;

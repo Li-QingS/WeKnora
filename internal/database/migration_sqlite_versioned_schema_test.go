@@ -42,7 +42,7 @@ var versionedSQLiteColumns = map[string][]string{
 	}, // 000092, 000018
 }
 
-const expectedSQLiteMigrationVersion = 18
+const expectedSQLiteMigrationVersion = 19
 
 func TestSQLiteMigrationsCreateVersionedSchema(t *testing.T) {
 	repoRoot := sqliteRepoRoot(t)

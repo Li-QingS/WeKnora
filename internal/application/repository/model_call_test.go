@@ -122,6 +122,8 @@ func TestModelCallRepositoryListUsesStableIDTieBreaker(t *testing.T) {
 	second := newTestModelCall("call-b", 1, "m1", string(types.ModelCallStatusSuccess), nil)
 	first.CreatedAt = createdAt
 	second.CreatedAt = createdAt
+	first.StartedAt = createdAt
+	second.StartedAt = createdAt
 	require.NoError(t, repo.Create(modelCallCtx(1), first))
 	require.NoError(t, repo.Create(modelCallCtx(1), second))
 
@@ -150,6 +152,52 @@ func TestModelCallRepositoryListByRequestGroup(t *testing.T) {
 	assert.Equal(t, int64(1), total)
 	require.Len(t, records, 1)
 	assert.Equal(t, "run-1", records[0].ID)
+}
+
+func TestModelCallRepositoryDateRangeUsesExclusiveNextMidnight(t *testing.T) {
+	db := setupModelCallTestDB(t)
+	repo := NewModelCallRepository(db)
+	dayStart := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
+	nextDay := dayStart.AddDate(0, 0, 1)
+
+	before := newTestModelCall("before", 1, "m1", string(types.ModelCallStatusSuccess), nil)
+	before.StartedAt = dayStart.Add(-time.Second)
+	during := newTestModelCall("during", 1, "m1", string(types.ModelCallStatusSuccess), nil)
+	during.StartedAt = nextDay.Add(-time.Millisecond)
+	after := newTestModelCall("after", 1, "m1", string(types.ModelCallStatusSuccess), nil)
+	after.StartedAt = nextDay
+	for _, record := range []*types.ModelCallRecord{before, during, after} {
+		require.NoError(t, repo.Create(modelCallCtx(1), record))
+	}
+
+	records, total, err := repo.List(modelCallCtx(1), 1, &types.ModelCallFilter{
+		From:        &dayStart,
+		To:          &nextDay,
+		ToExclusive: true,
+	}, &types.Pagination{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, records, 1)
+	assert.Equal(t, "during", records[0].ID)
+}
+
+func TestModelCallRepositoryRangeUsesDisplayedStartTime(t *testing.T) {
+	db := setupModelCallTestDB(t)
+	repo := NewModelCallRepository(db)
+	dayStart := time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC)
+	nextDay := dayStart.AddDate(0, 0, 1)
+	record := newTestModelCall("cross-midnight", 1, "m1", string(types.ModelCallStatusSuccess), nil)
+	record.StartedAt = dayStart.Add(-time.Second)
+	record.CreatedAt = dayStart.Add(time.Second)
+	require.NoError(t, repo.Create(modelCallCtx(1), record))
+
+	_, total, err := repo.List(modelCallCtx(1), 1, &types.ModelCallFilter{
+		From:        &dayStart,
+		To:          &nextDay,
+		ToExclusive: true,
+	}, &types.Pagination{Page: 1, PageSize: 10})
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total)
 }
 
 func TestModelCallRepositorySummary(t *testing.T) {

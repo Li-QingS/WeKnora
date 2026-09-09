@@ -22,6 +22,7 @@
         <label>时间区间</label>
         <t-date-range-picker
           v-model="filterRange"
+          value-type="YYYY-MM-DD"
           placeholder="开始日期 / 结束日期"
           clearable
           allow-input
@@ -236,6 +237,7 @@ import type {
   ModelCallSummaryItem,
   ModelPrice,
 } from '@/api/model/usage'
+import { modelUsageDateBounds } from './modelUsageDateRange'
 
 const summary = ref<ModelCallSummaryItem[]>([])
 const records = ref<ModelCallRecord[]>([])
@@ -367,16 +369,8 @@ async function saveModelPrice(model: ModelConfig) {
 function buildFilterParams(): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   if (filterModelId.value) params.model_id = filterModelId.value
-  const [fromDate, toDate] = filterRange.value
-  if (fromDate) params.from = dateToApiTime(fromDate, false)
-  if (toDate) params.to = dateToApiTime(toDate, true)
+  Object.assign(params, modelUsageDateBounds(filterRange.value))
   return params
-}
-
-function dateToApiTime(value: string, endOfDay: boolean): string {
-  const parsed = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00'}`)
-  if (Number.isNaN(parsed.getTime())) return ''
-  return parsed.toISOString()
 }
 
 async function applyFilters() {

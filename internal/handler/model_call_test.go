@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -21,14 +22,16 @@ type fakeModelCallService struct {
 	summary    []*types.ModelCallSummaryItem
 	prices     []*types.ModelPrice
 	upserted   *types.ModelPrice
+	listFilter *types.ModelCallFilter
 	err        error
 }
 
 func (f *fakeModelCallService) List(
-	context.Context,
-	*types.ModelCallFilter,
-	*types.Pagination,
+	_ context.Context,
+	filter *types.ModelCallFilter,
+	_ *types.Pagination,
 ) (*types.PageResult, error) {
+	f.listFilter = filter
 	return f.listResult, f.err
 }
 
@@ -80,6 +83,39 @@ func TestModelCallList(t *testing.T) {
 	newModelCallTestRouter(svc).ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), `"call-1"`)
+}
+
+func TestModelCallListExpandsSameDayRange(t *testing.T) {
+	svc := &fakeModelCallService{listResult: types.NewPageResult(
+		0,
+		&types.Pagination{Page: 1, PageSize: 10},
+		[]*types.ModelCallRecord{},
+	)}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/model-calls?from=2026-09-08&to=2026-09-08", nil)
+	newModelCallTestRouter(svc).ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, svc.listFilter)
+	require.NotNil(t, svc.listFilter.From)
+	require.NotNil(t, svc.listFilter.To)
+	assert.Equal(t, time.Date(2026, 9, 8, 0, 0, 0, 0, time.UTC), *svc.listFilter.From)
+	assert.Equal(t, time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC), *svc.listFilter.To)
+	assert.True(t, svc.listFilter.ToExclusive)
+}
+
+func TestParseModelCallFilterKeepsRFC3339UpperBoundInclusive(t *testing.T) {
+	svc := &fakeModelCallService{listResult: types.NewPageResult(
+		0,
+		&types.Pagination{Page: 1, PageSize: 10},
+		[]*types.ModelCallRecord{},
+	)}
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/model-calls?to=2026-09-08T23%3A59%3A59%2B08%3A00", nil)
+	newModelCallTestRouter(svc).ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.NotNil(t, svc.listFilter)
+	require.NotNil(t, svc.listFilter.To)
+	assert.False(t, svc.listFilter.ToExclusive)
 }
 
 func TestModelCallSummary(t *testing.T) {

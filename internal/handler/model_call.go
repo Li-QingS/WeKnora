@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -180,20 +181,36 @@ func parseModelCallFilter(c *gin.Context) (*types.ModelCallFilter, error) {
 		Status:    c.Query("status"),
 	}
 	if raw := c.Query("from"); raw != "" {
-		parsed, err := time.Parse(time.RFC3339, raw)
+		parsed, _, err := parseModelCallTime(raw, false)
 		if err != nil {
 			return nil, fmt.Errorf("invalid from timestamp")
 		}
 		filter.From = &parsed
 	}
 	if raw := c.Query("to"); raw != "" {
-		parsed, err := time.Parse(time.RFC3339, raw)
+		parsed, exclusive, err := parseModelCallTime(raw, true)
 		if err != nil {
 			return nil, fmt.Errorf("invalid to timestamp")
 		}
 		filter.To = &parsed
+		filter.ToExclusive = exclusive
 	}
 	return filter, nil
+}
+
+// parseModelCallTime treats a date-only upper bound as the next midnight. The
+// ledger uses timezone-free timestamps, so date-only values are represented as
+// UTC wall-clock values and are not shifted by the browser or server timezone.
+func parseModelCallTime(raw string, upperBound bool) (time.Time, bool, error) {
+	raw = strings.TrimSpace(raw)
+	if parsed, err := time.Parse("2006-01-02", raw); err == nil {
+		if upperBound {
+			return parsed.AddDate(0, 0, 1), true, nil
+		}
+		return parsed, false, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	return parsed, false, err
 }
 
 func userIDFromCtx(ctx context.Context) string {

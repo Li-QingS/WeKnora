@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_model_call_records_tenant_started;

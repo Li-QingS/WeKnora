@@ -55,7 +55,7 @@ func (r *modelCallRepository) List(
 	}
 	var records []*types.ModelCallRecord
 	if err := query.
-		Order("created_at DESC, id DESC").
+		Order("started_at DESC, id DESC").
 		Offset(p.Offset()).
 		Limit(p.Limit()).
 		Find(&records).Error; err != nil {
@@ -150,10 +150,14 @@ func applyModelCallFilters(query *gorm.DB, filter *types.ModelCallFilter) *gorm.
 		query = query.Where("request_group_id = ?", filter.RequestGroupID)
 	}
 	if filter.From != nil {
-		query = query.Where("created_at >= ?", *filter.From)
+		query = query.Where("started_at >= ?", *filter.From)
 	}
 	if filter.To != nil {
-		query = query.Where("created_at <= ?", *filter.To)
+		operator := "<="
+		if filter.ToExclusive {
+			operator = "<"
+		}
+		query = query.Where("started_at "+operator+" ?", *filter.To)
 	}
 	return query
 }

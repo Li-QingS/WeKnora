@@ -122,6 +122,7 @@ type ModelCallFilter struct {
 	RequestGroupID string
 	From           *time.Time
 	To             *time.Time
+	ToExclusive    bool
 }
 
 // ModelCallSummaryItem is one aggregate row by model.
