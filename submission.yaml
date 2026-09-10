@@ -1,0 +1,15 @@
+version: 1
+student:
+  name: "李青松"
+  github_id: "Li-QingS"
+topic:
+  id: "3"
+  title: "质量评测基线与成本可观测"
+result:
+  type: code
+  url: "https://github.com/Li-QingS/WeKnora/tree/rhino-2026-final-3"
+repository:
+  url: "https://github.com/Li-QingS/WeKnora.git"
+  branch: "feat/evaluation-persistence"
+  commit: "501f957e584f99f1d231466fa27fa0c0ccd25980"
+  tag: "rhino-2026-final-3"
