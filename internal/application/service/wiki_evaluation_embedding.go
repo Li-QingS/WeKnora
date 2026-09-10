@@ -32,7 +32,11 @@ func (p *wikiEmbeddingProvider) Embed(
 	if err != nil {
 		return nil, fmt.Errorf("load wiki evaluation embedding model %q: %w", modelID, err)
 	}
-	vectors, err := model.BatchEmbed(ctx, texts)
+	// Use the model's standard pool-aware path so provider-specific request
+	// limits are respected through BATCH_EMBED_SIZE. Calling BatchEmbed
+	// directly sends every unmatched label in one request, which providers
+	// with small caps (for example, 20 inputs) reject.
+	vectors, err := model.BatchEmbedWithPool(ctx, model, texts)
 	if err != nil {
 		return nil, fmt.Errorf("embed wiki evaluation labels: %w", err)
 	}

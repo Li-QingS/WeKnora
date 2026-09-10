@@ -554,11 +554,11 @@
 **依赖：** T38
 
 **步骤：**
-1. 收集未匹配节点的去重规范化名称/别名并批量调用所选模型。
+1. 收集未匹配节点的去重规范化名称/别名，通过 Embedder 的标准 pool-aware 路径按 `BATCH_EMBED_SIZE` 分批调用所选模型。
 2. 在单次运行内缓存文本向量，校验向量维度和零向量。
 3. 每对同类型节点取名称集合的最大余弦相似度，删除低于阈值的候选。
 
-**验证：** `go test ./internal/application/service -run TestWikiNodeSemanticMatch -count=1` 编译通过。
+**验证：** `go test ./internal/application/service -run 'TestWikiNodeSemanticMatch|TestWikiEmbeddingProviderUsesPoolAwareBatching' -count=1` 通过；超过 20 个标签仍按原顺序返回。
 
 ### T41：实现确定性最大权语义分配
 

@@ -51,6 +51,8 @@
 
 - [ ] **C23 / AC12/N4：Embedding 去重和复用。** 同一运行中重复出现的规范化名称或别名只请求一次向量，详情和报告不触发新的 Embedding。（验证：使用重复文本 fixture 比较去重文本数、模型调用输入数，以及打开详情/下载前后的调用记录数）
 
+- [x] **C23a：Embedding Provider 批量上限。** Wiki 节点评分走标准 pool-aware 分批路径；45 个标签在单批上限 20 的模型下拆为 20/20/5，向量顺序保持不变。（验证：`TestWikiEmbeddingProviderUsesPoolAwareBatching`）
+
 - [ ] **C24 / AC13：结果可追溯。** 运行详情包含 dataset ID/版本/哈希、Gold schema/哈希、Chat/Embedding 模型身份、实际阈值、Wiki 配置、应用版本和 Git 签名。（验证：检查成功详情与 JSON 报告的 config snapshot）
 
 - [ ] **C25 / AC13：成本分开统计。** 页面和报告分别显示 generation cost 与 scoring cost，两者的调用数和 token/cost 汇总等于对应 request group 的 ledger 汇总。（验证：查询两个 group 的模型调用并手工求和比较）
