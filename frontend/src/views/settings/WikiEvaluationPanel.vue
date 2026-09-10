@@ -3,18 +3,18 @@
     <div class="settings-group wiki-start">
       <div class="wiki-start__head">
         <div>
-          <span class="section-kicker">WIKI KNOWLEDGE GRAPH</span>
+          <span class="section-kicker">WIKI 图谱质量</span>
           <h3>新建 Wiki 图谱评测</h3>
           <p>从固定语料生成隔离的临时 Wiki，再从节点覆盖和页面连接两个层面衡量结果。</p>
         </div>
-        <span class="scoring-boundary">评分阶段不调用生成模型</span>
+        <span class="scoring-boundary">评分：规则 + Embedding，不调用 Chat</span>
       </div>
       <div class="evaluation-scope">
         <article class="scope-card scope-card--nodes">
           <span class="scope-card__number">01</span>
           <div>
             <strong>节点覆盖</strong>
-            <p>实体与概念分别对齐 Gold，先名称精确匹配，再使用 Embedding 语义匹配。</p>
+            <p>分别检查标准答案中的实体和概念，先按名称匹配，再做语义匹配。</p>
             <div class="scope-card__metrics"><span>实体覆盖率</span><span>概念覆盖率</span><span>总体覆盖率</span></div>
           </div>
         </article>
@@ -23,21 +23,22 @@
           <div>
             <strong>连接结构</strong>
             <p>在已匹配节点之间比较 Wiki 页面有向链接，区分正确、缺失和多余连接。</p>
-            <div class="scope-card__metrics"><span>Precision</span><span>Recall</span><span>F1</span></div>
+            <div class="scope-card__metrics"><span>连接准确率</span><span>连接召回率</span><span>综合分数</span></div>
           </div>
         </article>
       </div>
       <t-loading :loading="optionsLoading" size="small">
         <div class="form-heading">
           <strong>运行配置</strong>
-          <span>生成使用 Chat 模型；名称语义对齐使用 Embedding 模型</span>
+          <span>Chat 负责生成 Wiki，Embedding 仅负责未精确匹配节点的语义对齐</span>
         </div>
+        <div class="wiki-flow"><span>评测流程</span><strong>导入文档</strong><i>→</i><strong>生成 Wiki</strong><i>→</i><strong>对齐节点</strong><i>→</i><strong>检查连接</strong></div>
         <div class="wiki-form">
           <div class="run-field">
             <label>数据集</label>
             <t-select v-model="form.datasetId" :options="datasetOptions" />
             <p v-if="selectedDataset" class="field-hint">
-              {{ selectedDataset.document_count }} 篇文档 · Gold {{ selectedDataset.gold.node_count }} 个节点 / {{ selectedDataset.gold.edge_count }} 条边
+              {{ selectedDataset.document_count }} 篇文档 · 标准答案 {{ selectedDataset.gold.node_count }} 个节点 / {{ selectedDataset.gold.edge_count }} 条连接
             </p>
           </div>
           <div class="run-field">
@@ -45,7 +46,7 @@
             <t-select v-model="form.chatModelId" :options="modelOptions('KnowledgeQA')" filterable />
           </div>
           <div class="run-field">
-            <label>语义匹配 Embedding</label>
+            <label>语义匹配模型（Embedding）</label>
             <t-select v-model="form.embeddingModelId" :options="modelOptions('Embedding')" filterable />
           </div>
           <div class="run-field">
@@ -57,7 +58,10 @@
             <t-button theme="primary" :disabled="!canStart" :loading="starting || polling" @click="start">
               {{ polling ? 'Wiki 评测进行中' : '开始 Wiki 评测' }}
             </t-button>
-            <span v-if="active" class="field-hint">{{ stageLabel(active.run.stage) }} · {{ progressText(active.run) }}</span>
+            <div v-if="active" class="wiki-progress">
+              <span>{{ stageLabel(active.run.stage) }}</span><strong>{{ progressText(active.run) }}</strong>
+              <span class="wiki-progress__track"><i :style="{ width: `${wikiProgressPercent}%` }"></i></span>
+            </div>
           </div>
         </div>
       </t-loading>
@@ -71,13 +75,15 @@
     <t-loading :loading="loading" size="small">
       <t-empty v-if="!loading && runs.length === 0" description="暂无 Wiki 评测记录" />
       <div v-else class="table-shell">
-        <t-table row-key="id" :data="runs" :columns="columns" hover @row-click="openDetail">
-          <template #id="{ row }"><span class="mono">{{ row.id }}</span></template>
+        <div class="history-table-scroll"><t-table row-key="id" :data="runs" :columns="columns" hover @row-click="openDetail">
+          <template #id="{ row }"><span class="mono" :title="row.id">{{ shortIdentifier(row.id) }}</span></template>
           <template #status="{ row }"><t-tag :theme="statusTheme(row.status)" variant="light">{{ statusLabel(row.status) }}</t-tag></template>
           <template #stage="{ row }">{{ stageLabel(row.stage) }}</template>
           <template #created_at="{ row }">{{ formatDate(row.created_at) }}</template>
           <template #action="{ row }">
+            <t-button variant="text" size="small" @click.stop="openDetail({ row })">查看</t-button>
             <t-popconfirm
+              v-if="props.canRun"
               :content="`确定删除 Wiki 评测 ${row.id} 吗？`"
               theme="danger"
               :disabled="row.status < 2"
@@ -86,8 +92,8 @@
               <t-button variant="text" size="small" :disabled="row.status < 2" @click.stop>删除</t-button>
             </t-popconfirm>
           </template>
-        </t-table>
-        <t-pagination v-model="page" v-model:page-size="pageSize" :total="total" @change="loadRuns" />
+        </t-table></div>
+        <div class="table-pager"><t-pagination v-model="page" v-model:page-size="pageSize" :total="total" @change="loadRuns" /></div>
       </div>
     </t-loading>
     <t-alert v-if="listError" theme="error" :message="listError" />
@@ -102,7 +108,7 @@
       </div>
       <div class="settings-group meta-grid">
         <div><strong>运行 ID</strong><span class="mono">{{ detail.run.id }}</span></div>
-        <div><strong>状态</strong><span>{{ statusLabel(detail.run.status) }}</span></div>
+        <div><strong>状态</strong><span><t-tag :theme="statusTheme(detail.run.status)" size="small" variant="light">{{ statusLabel(detail.run.status) }}</t-tag></span></div>
         <div><strong>阶段</strong><span>{{ stageLabel(detail.run.stage) }}</span></div>
         <div><strong>阈值</strong><span>{{ detail.params?.semantic_threshold?.toFixed(2) || '-' }}</span></div>
         <div v-if="detail.run.failure_stage"><strong>失败阶段</strong><span>{{ stageLabel(detail.run.failure_stage) }}</span></div>
@@ -112,13 +118,13 @@
       <div v-if="detail.metric" class="result-overview">
         <section class="metric-section">
           <div class="metric-section__head">
-            <div><span>01</span><div><h4>节点覆盖</h4><p>Gold 实体与概念在生成 Wiki 中的覆盖情况</p></div></div>
+            <div><span>01</span><div><h4>节点覆盖</h4><p>标准答案中的实体与概念在生成 Wiki 中的覆盖情况</p></div></div>
             <strong class="overall-score">总体 {{ percent(detail.metric.overall.coverage) }}</strong>
           </div>
           <div class="metric-cards metric-cards--nodes">
             <div v-for="item in nodeCards" :key="item.name" class="metric-card">
               <span>{{ item.name }}覆盖率</span><strong>{{ percent(item.metric.coverage) }}</strong>
-              <small>Gold {{ item.metric.gold_total }} · 精确 {{ item.metric.exact_matched }} · 语义 {{ item.metric.semantic_matched }} · 缺失 {{ item.metric.unmatched }}</small>
+              <small>标准答案 {{ formatCount(item.metric.gold_total) }} · 名称匹配 {{ formatCount(item.metric.exact_matched) }} · 语义匹配 {{ formatCount(item.metric.semantic_matched) }} · 未覆盖 {{ formatCount(item.metric.unmatched) }}</small>
             </div>
           </div>
         </section>
@@ -126,14 +132,14 @@
         <section class="metric-section graph-section">
           <div class="metric-section__head">
             <div><span>02</span><div><h4>连接结构</h4><p>已匹配节点构成的有向链接图</p></div></div>
-            <strong class="overall-score">F1 {{ detail.metric.graph.scorable ? percent(detail.metric.graph.f1) : '不可评分' }}</strong>
+            <strong class="overall-score">综合 {{ detail.metric.graph.scorable ? percent(detail.metric.graph.f1) : '不可评分' }}</strong>
           </div>
           <div class="graph-metrics">
-            <div><span>Precision</span><strong>{{ percent(detail.metric.graph.precision) }}</strong></div>
-            <div><span>Recall</span><strong>{{ percent(detail.metric.graph.recall) }}</strong></div>
-            <div><span>正确连接</span><strong>{{ detail.metric.graph.correct }}</strong></div>
-            <div><span>缺失连接</span><strong>{{ detail.metric.graph.missing }}</strong></div>
-            <div><span>多余连接</span><strong>{{ detail.metric.graph.extra }}</strong></div>
+            <div><span>连接准确率</span><strong>{{ percent(detail.metric.graph.precision) }}</strong><small>生成连接中正确的比例</small></div>
+            <div><span>连接召回率</span><strong>{{ percent(detail.metric.graph.recall) }}</strong><small>标准连接被覆盖的比例</small></div>
+            <div><span>正确连接</span><strong>{{ formatCount(detail.metric.graph.correct) }}</strong></div>
+            <div><span>缺失连接</span><strong>{{ formatCount(detail.metric.graph.missing) }}</strong></div>
+            <div><span>多余连接</span><strong>{{ formatCount(detail.metric.graph.extra) }}</strong></div>
           </div>
           <p v-if="detail.metric.graph.note" class="graph-note">{{ detail.metric.graph.note }}</p>
         </section>
@@ -143,11 +149,11 @@
           <div class="cost-cards">
             <div v-if="detail.metric.generation_cost" class="cost-card">
               <span>Wiki 生成 · Chat</span><strong>{{ detail.metric.generation_cost.model_calls }} 次调用</strong>
-              <small>{{ detail.metric.generation_cost.total_tokens }} tokens · {{ formatCost(detail.metric.generation_cost.estimated_cost_usd) }}</small>
+              <small>{{ formatCount(detail.metric.generation_cost.total_tokens) }} Token · {{ formatCost(detail.metric.generation_cost.estimated_cost_usd) }}</small>
             </div>
             <div v-if="detail.metric.scoring_cost" class="cost-card">
               <span>语义评分 · Embedding</span><strong>{{ detail.metric.scoring_cost.model_calls }} 次调用</strong>
-              <small>{{ detail.metric.scoring_cost.total_tokens }} tokens · {{ formatCost(detail.metric.scoring_cost.estimated_cost_usd) }}</small>
+              <small>{{ formatCount(detail.metric.scoring_cost.total_tokens) }} Token · {{ formatCost(detail.metric.scoring_cost.estimated_cost_usd) }}</small>
             </div>
           </div>
         </section>
@@ -163,10 +169,11 @@
         </div>
         <div v-if="detailKind === 'nodes'" class="scroll-table">
           <table>
-            <thead><tr><th>类型</th><th>Gold</th><th>方式</th><th>Wiki 页面</th><th>分数/原因</th></tr></thead>
+            <thead><tr><th>类型</th><th>标准节点</th><th>匹配结果</th><th>对应 Wiki 页面</th><th>相似度 / 说明</th></tr></thead>
             <tbody><tr v-for="node in wikiResult.node_matches" :key="node.gold_node_id">
-              <td>{{ node.gold_type }}</td><td>{{ node.gold_name }}</td><td>{{ node.method }}</td>
-              <td>{{ node.page_title || node.page_slug || '-' }}</td><td>{{ node.score == null ? (node.reason || '-') : decimal(node.score) }}</td>
+              <td>{{ wikiNodeTypeLabel(node.gold_type) }}</td><td>{{ node.gold_name }}</td>
+              <td><span class="match-tag" :class="`match-tag--${node.method}`">{{ wikiMatchMethodLabel(node.method) }}</span></td>
+              <td>{{ node.page_title || node.page_slug || '—' }}</td><td>{{ node.score == null ? (node.reason || '—') : percent(node.score) }}</td>
             </tr></tbody>
           </table>
         </div>
@@ -211,6 +218,7 @@ import {
   type WikiEdgeRef,
   type WikiEvaluationRun,
 } from '@/api/evaluation'
+import { formatCount, formatUSD, shortIdentifier, wikiMatchMethodLabel, wikiNodeTypeLabel } from './presentation'
 
 const props = defineProps<{ canRun: boolean }>()
 const datasets = ref<WikiEvaluationDatasetOption[]>([])
@@ -238,15 +246,20 @@ const selectedDataset = computed(() => datasets.value.find((item) => item.id ===
 const canStart = computed(() => props.canRun && Boolean(form.datasetId && form.chatModelId && form.embeddingModelId))
 const datasetOptions = computed(() => datasets.value.map((item) => ({ label: item.id, value: item.id })))
 const columns = [
-  { colKey: 'id', title: '运行 ID', width: 250 }, { colKey: 'dataset_id', title: '数据集', width: 140 },
+  { colKey: 'id', title: '运行 ID', width: 140 }, { colKey: 'dataset_id', title: '数据集', width: 140 },
   { colKey: 'status', title: '状态', width: 100 }, { colKey: 'stage', title: '阶段', width: 150 },
-  { colKey: 'created_at', title: '创建时间', width: 180 }, { colKey: 'action', title: '操作', width: 80 },
+  { colKey: 'created_at', title: '创建时间', width: 180 }, { colKey: 'action', title: '操作', width: 130 },
 ]
 const nodeCards = computed(() => detail.value?.metric ? [
   { name: '实体', metric: detail.value.metric.entity },
   { name: '概念', metric: detail.value.metric.concept },
 ] : [])
 const wikiResult = computed(() => detail.value?.result ?? null)
+const wikiProgressPercent = computed(() => {
+  const progress = active.value?.run.stage_progress
+  const total = progress?.total || 0
+  return total > 0 ? Math.min(100, ((progress?.current || 0) / total) * 100) : 0
+})
 const selectedEdges = computed<WikiEdgeRef[]>(() => {
   if (!detail.value?.result) return []
   const edges = {
@@ -276,11 +289,12 @@ function stageLabel(stage?: string) {
 }
 function progressText(run: WikiEvaluationRun) {
   const progress = run.stage_progress
-  return progress ? `${progress.current || 0}/${progress.total || 0} ${progress.message || ''}` : '-'
+  if (!progress) return '准备中'
+  const count = progress.total ? `${progress.current || 0}/${progress.total}` : ''
+  return [count, progress.message].filter(Boolean).join(' · ') || '处理中'
 }
-function decimal(value: number) { return value.toFixed(4) }
 function percent(value: number) { return `${(value * 100).toFixed(2)}%` }
-function formatCost(value: number | null) { return value == null ? '成本未配置' : `$${value.toFixed(6)}` }
+function formatCost(value: number | null) { return formatUSD(value, 6) }
 function formatDate(value: string) { return value ? new Date(value).toLocaleString() : '-' }
 
 async function loadOptions() {
@@ -503,6 +517,23 @@ onUnmounted(() => {
   margin-top: 13px;
 }
 
+.wiki-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: var(--td-bg-color-secondarycontainer, #f7f8fa);
+  color: var(--td-text-color-secondary, #666);
+  font-size: 12px;
+}
+
+.wiki-flow span { margin-right: 4px; color: var(--td-text-color-placeholder, #999); }
+.wiki-flow strong { color: var(--td-text-color-primary, #333); font-weight: 500; }
+.wiki-flow i { color: var(--td-text-color-placeholder, #999); font-style: normal; }
+
 .run-field {
   display: flex;
   flex-direction: column;
@@ -527,6 +558,38 @@ onUnmounted(() => {
   align-items: center;
 }
 
+.wiki-progress {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 3px 10px;
+  min-width: 260px;
+  color: var(--td-text-color-secondary, #666);
+  font-size: 12px;
+}
+
+.wiki-progress strong {
+  justify-self: end;
+  color: var(--td-text-color-primary, #333);
+  font-weight: 500;
+}
+
+.wiki-progress__track {
+  grid-column: 1 / -1;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--td-component-stroke, #e7e7e7);
+}
+
+.wiki-progress__track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--td-brand-color, #0052d9);
+  transition: width 0.2s ease;
+}
+
 .history-head,
 .detail-head {
   align-items: center;
@@ -539,18 +602,26 @@ onUnmounted(() => {
 }
 
 .table-shell {
-  overflow-x: auto;
   margin-bottom: 24px;
+  border: 1px solid var(--td-component-stroke, #e7e7e7);
+  border-radius: 9px;
+  overflow: hidden;
 }
 
-.table-shell :deep(.t-pagination) {
-  margin-top: 12px;
+.history-table-scroll { overflow-x: auto; }
+
+.table-pager {
+  display: flex;
   justify-content: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--td-component-stroke, #e7e7e7);
 }
 
 .mono {
+  display: inline-block;
   font-family: var(--td-font-family-mono, monospace);
   font-size: 12px;
+  cursor: help;
 }
 
 .wiki-detail {
@@ -662,6 +733,12 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
+.graph-metrics small {
+  color: var(--td-text-color-placeholder, #999);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 .metric-card strong {
   font-size: 23px;
 }
@@ -740,6 +817,30 @@ td {
   text-align: left;
 }
 
+th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--td-bg-color-secondarycontainer, #f7f8fa);
+  color: var(--td-text-color-secondary, #666);
+}
+
+tbody tr:hover { background: var(--td-bg-color-container-hover, #f3f3f3); }
+
+.match-tag {
+  display: inline-flex;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--td-bg-color-secondarycontainer, #f3f3f3);
+  color: var(--td-text-color-secondary, #666);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.match-tag--exact { color: var(--td-success-color, #2ba471); background: var(--td-success-color-1, #eaf7ee); }
+.match-tag--semantic { color: var(--td-brand-color, #0052d9); background: var(--td-brand-color-light, #eef4ff); }
+.match-tag--unmatched { color: var(--td-error-color, #d54941); background: var(--td-error-color-1, #fff0ed); }
+
 .edge-filter {
   margin-bottom: 10px;
 }
@@ -774,6 +875,18 @@ td {
 
   .scoring-boundary {
     align-self: flex-start;
+  }
+
+  .wiki-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .wiki-progress { min-width: 0; }
+
+  .table-pager {
+    overflow-x: auto;
+    justify-content: flex-start;
   }
 }
 </style>

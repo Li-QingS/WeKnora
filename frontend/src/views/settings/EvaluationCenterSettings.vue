@@ -20,7 +20,7 @@
           <strong>问答效果评测</strong>
           <small>检索命中、重排与回答质量</small>
         </span>
-        <span class="evaluator-option__metrics">Recall · MRR · ROUGE-L</span>
+        <span class="evaluator-option__metrics">检索召回 · 排序质量 · 回答质量</span>
       </button>
       <button
         type="button"
@@ -34,7 +34,7 @@
           <strong>知识图谱评测</strong>
           <small>实体、概念覆盖与页面连接结构</small>
         </span>
-        <span class="evaluator-option__metrics">Coverage · Precision · Recall · F1</span>
+        <span class="evaluator-option__metrics">节点覆盖 · 连接准确 · 连接召回</span>
       </button>
     </div>
 
@@ -56,6 +56,9 @@
           <t-alert theme="warning" :message="optionsError" />
         </div>
         <div class="evaluation-run__form">
+          <div class="evaluation-flow" aria-label="RAG 评测流程">
+            <span>评测流程</span><strong>数据集</strong><i>→</i><strong>切分与检索</strong><i>→</i><strong>生成回答</strong><i>→</i><strong>计算指标</strong>
+          </div>
           <div class="run-field">
             <label>数据集</label>
             <t-select
@@ -134,9 +137,10 @@
               <template #icon v-if="!starting && !polling"><t-icon name="play-circle" /></template>
               {{ polling ? '评测进行中' : '开始评测' }}
             </t-button>
-            <span v-if="polling && activeTask" class="evaluation-run__progress">
-              进度 {{ activeTask.task.finished || 0 }}/{{ activeTask.task.total || 0 }}
-            </span>
+            <div v-if="polling && activeTask" class="evaluation-run__progress">
+              <span>正在评测样本</span><strong>{{ activeTask.task.finished || 0 }}/{{ activeTask.task.total || 0 }}</strong>
+              <span class="progress-track"><i :style="{ width: `${activeProgressPercent}%` }"></i></span>
+            </div>
           </div>
 
           <div v-if="runError" class="evaluation-run__error">
@@ -181,7 +185,7 @@
             @row-click="openDetail"
           >
             <template #id="{ row }">
-              <span class="run-id">{{ row.id }}</span>
+              <span class="run-id" :title="row.id">{{ shortIdentifier(row.id) }}</span>
             </template>
             <template #status="{ row }">
               <t-tag :theme="statusTheme(row.status)" size="small" variant="light">
@@ -195,6 +199,7 @@
               <span>{{ formatDate(row.created_at) }}</span>
             </template>
             <template #action="{ row }">
+              <t-button variant="text" size="small" @click.stop="openDetail({ row })">查看</t-button>
               <t-popconfirm
                 v-if="canRun"
                 :content="`确定删除评测 ${row.id} 吗？`"
@@ -204,13 +209,12 @@
               >
                 <t-button
                   variant="text"
-                  shape="square"
                   size="small"
                   :disabled="isActiveRun(row.status)"
                   title="删除"
                   @click.stop
                 >
-                  <t-icon name="delete" />
+                  删除
                 </t-button>
               </t-popconfirm>
             </template>
@@ -270,8 +274,8 @@
               </dd>
             </div>
             <div class="field-row">
-              <dt>config_hash</dt>
-              <dd class="hash-cell">{{ selectedRun.config_hash || 'unknown' }}</dd>
+              <dt>配置指纹</dt>
+              <dd class="hash-cell" :title="selectedRun.config_hash">{{ shortIdentifier(selectedRun.config_hash, 12) }}</dd>
             </div>
             <div v-if="detailErrorText" class="field-row field-row--error">
               <dt>错误信息</dt>
@@ -288,41 +292,27 @@
           </t-alert>
         </div>
 
-        <div v-if="metric" class="settings-group evaluation-detail__metrics">
-          <h4>检索指标</h4>
-          <table class="metric-table">
-            <thead>
-              <tr>
-                <th>指标</th>
-                <th>值</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(value, name) in metric.retrieval_metrics" :key="name">
-                <td>{{ name }}</td>
-                <td>{{ formatMetric(value) }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="metric" class="evaluation-detail__metrics">
+          <section class="settings-group metric-group">
+            <div class="metric-group__head"><div><h4>检索表现</h4><p>衡量能否找到相关文档，并把正确结果排在前面</p></div><span>越高越好</span></div>
+            <div class="rag-metric-grid">
+              <article v-for="item in retrievalMetricCards" :key="item.name" class="rag-metric-card">
+                <span>{{ item.label }}</span><strong>{{ formatPercent(item.value) }}</strong><small>{{ item.help }}</small>
+              </article>
+            </div>
+          </section>
 
-          <h4>生成指标</h4>
-          <table class="metric-table">
-            <thead>
-              <tr>
-                <th>指标</th>
-                <th>值</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(value, name) in metric.generation_metrics" :key="name">
-                <td>{{ name }}</td>
-                <td>{{ formatMetric(value) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <section class="settings-group metric-group">
+            <div class="metric-group__head"><div><h4>回答质量</h4><p>比较生成回答与标准答案的内容和表达</p></div><span>越高越好</span></div>
+            <div class="rag-metric-grid">
+              <article v-for="item in generationMetricCards" :key="item.name" class="rag-metric-card">
+                <span>{{ item.label }}</span><strong>{{ formatPercent(item.value) }}</strong><small>{{ item.help }}</small>
+              </article>
+            </div>
+          </section>
 
-          <div v-if="metric.cost_metrics" class="metric-block">
-            <h4>成本指标</h4>
+          <section v-if="metric.cost_metrics" class="settings-group metric-group metric-group--compact">
+            <h4>模型消耗</h4>
             <table class="metric-table">
               <thead>
                 <tr>
@@ -332,15 +322,15 @@
               </thead>
               <tbody>
                 <tr v-for="(value, name) in metric.cost_metrics" :key="name">
-                  <td>{{ name }}</td>
-                  <td>{{ formatMetricValue(value) }}</td>
+                  <td>{{ evaluationCostLabel(name) }}</td>
+                  <td>{{ formatCostMetric(name, value) }}</td>
                 </tr>
               </tbody>
             </table>
-          </div>
+          </section>
 
-          <div v-if="metric.latency_metrics" class="metric-block">
-            <h4>耗时指标</h4>
+          <section v-if="metric.latency_metrics" class="settings-group metric-group metric-group--compact">
+            <h4>运行耗时</h4>
             <table class="metric-table">
               <thead>
                 <tr>
@@ -350,12 +340,12 @@
               </thead>
               <tbody>
                 <tr v-for="(value, name) in metric.latency_metrics" :key="name">
-                  <td>{{ name }}</td>
-                  <td>{{ formatMetricValue(value) }}</td>
+                  <td>{{ evaluationLatencyLabel(name) }}</td>
+                  <td>{{ formatLatencyMetric(name, value) }}</td>
                 </tr>
               </tbody>
             </table>
-          </div>
+          </section>
         </div>
 
         <div v-if="configSnapshot" class="settings-group evaluation-detail__snapshot">
@@ -370,9 +360,9 @@
             </thead>
             <tbody>
               <tr v-for="model in snapshotModels" :key="model.id || model.name">
-                <td>{{ model.name || model.id || 'unknown' }}</td>
-                <td>{{ model.type || 'unknown' }}</td>
-                <td>{{ model.provider || 'unknown' }}</td>
+                <td>{{ model.name || model.id || '—' }}</td>
+                <td :title="model.type">{{ modelTypeLabel(model.type) }}</td>
+                <td>{{ model.provider || '—' }}</td>
               </tr>
             </tbody>
           </table>
@@ -412,6 +402,15 @@ import {
 } from '@/api/evaluation'
 import { useAuthStore } from '@/stores/auth'
 import WikiEvaluationPanel from './WikiEvaluationPanel.vue'
+import {
+  evaluationCostLabel,
+  evaluationLatencyLabel,
+  evaluationMetricPresentation,
+  formatCount,
+  formatUSD,
+  modelTypeLabel,
+  shortIdentifier,
+} from './presentation'
 
 const authStore = useAuthStore()
 const activeEvaluator = ref<'rag' | 'wiki'>('rag')
@@ -464,11 +463,11 @@ const snapshotModels = computed(() => configSnapshot.value?.models || [])
 const detailErrorText = computed(() => detail.value?.task?.err_msg || selectedRun.value?.err_msg || '')
 const snapshotSampleCount = computed(() => {
   const count = configSnapshot.value?.dataset?.sample_count
-  return count == null ? 'unknown' : String(count)
+  return count == null ? '—' : formatCount(count)
 })
 const snapshotVersion = computed(() => {
   const version = configSnapshot.value?.version
-  if (!version?.app_version && !version?.git_commit) return 'unknown'
+  if (!version?.app_version && !version?.git_commit) return '—'
   const appVersion = version.app_version || ''
   const commit = version.git_commit || ''
   return appVersion && commit ? `${appVersion} (${commit})` : appVersion || commit
@@ -479,6 +478,17 @@ const datasetOptions = computed(() => datasets.value.map((dataset) => ({
 })))
 const selectedDataset = computed(() => datasets.value.find((dataset) => dataset.id === form.datasetId))
 const usesChunkSize = computed(() => form.chunkStrategy !== 'passthrough' && form.chunkStrategy !== '')
+const activeProgressPercent = computed(() => {
+  const finished = activeTask.value?.task.finished || 0
+  const total = activeTask.value?.task.total || 0
+  return total > 0 ? Math.min(100, (finished / total) * 100) : 0
+})
+const retrievalMetricCards = computed(() => Object.entries(metric.value?.retrieval_metrics || {}).map(([name, value]) => ({
+  name, value, ...evaluationMetricPresentation(name),
+})))
+const generationMetricCards = computed(() => Object.entries(metric.value?.generation_metrics || {}).map(([name, value]) => ({
+  name, value, ...evaluationMetricPresentation(name),
+})))
 const chunkStrategyOptions = [
   { label: '递归切分（recursive）', value: 'recursive' },
   { label: '自适应（auto）', value: 'auto' },
@@ -489,12 +499,12 @@ const chunkStrategyOptions = [
 ]
 
 const columns = computed(() => [
-  { colKey: 'id', title: '运行 ID', width: 260 },
+  { colKey: 'id', title: '运行 ID', width: 140 },
   { colKey: 'dataset_id', title: '数据集', width: 120 },
   { colKey: 'status', title: '状态', width: 110 },
   { colKey: 'progress', title: '进度', width: 100 },
   { colKey: 'created_at', title: '创建时间', width: 220 },
-  { colKey: 'action', title: '操作', width: 80 },
+  { colKey: 'action', title: '操作', width: 130 },
 ])
 
 function statusLabel(status: number): string {
@@ -691,13 +701,20 @@ function formatDate(value: string): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-function formatMetric(value: number): string {
-  return value == null ? 'unknown' : value.toFixed(4)
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`
 }
 
-function formatMetricValue(value: unknown): string {
-  if (value == null) return 'unknown'
-  if (typeof value === 'number') return value.toFixed(4)
+function formatCostMetric(name: string, value: number | null): string {
+  if (name === 'estimated_cost_usd') return formatUSD(value)
+  return formatCount(value)
+}
+
+function formatLatencyMetric(name: string, value: number): string {
+  if (name === 'model_calls') return `${formatCount(value)} 次`
+  if (name.endsWith('_ms') || name.includes('ms_per')) {
+    return value >= 1000 ? `${(value / 1000).toFixed(2)} 秒` : `${formatCount(value)} ms`
+  }
   return String(value)
 }
 
@@ -842,6 +859,34 @@ onMounted(async () => {
   gap: 14px 16px;
 }
 
+.evaluation-flow {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 9px 11px;
+  border-radius: 7px;
+  background: var(--td-bg-color-secondarycontainer, #f7f8fa);
+  color: var(--td-text-color-secondary, #666);
+  font-size: 12px;
+}
+
+.evaluation-flow > span {
+  margin-right: 4px;
+  color: var(--td-text-color-placeholder, #999);
+}
+
+.evaluation-flow strong {
+  color: var(--td-text-color-primary, #333);
+  font-weight: 500;
+}
+
+.evaluation-flow i {
+  color: var(--td-text-color-placeholder, #999);
+  font-style: normal;
+}
+
 .run-field {
   display: flex;
   flex-direction: column;
@@ -899,8 +944,35 @@ onMounted(async () => {
 }
 
 .evaluation-run__progress {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 3px 10px;
+  min-width: 230px;
   color: var(--td-text-color-secondary, #666);
   font-size: 13px;
+}
+
+.evaluation-run__progress strong {
+  justify-self: end;
+  color: var(--td-text-color-primary, #333);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  grid-column: 1 / -1;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--td-bg-color-secondarycontainer, #e7e7e7);
+}
+
+.progress-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--td-brand-color, #0052d9);
+  transition: width 0.2s ease;
 }
 
 .evaluation-run__options-error,
@@ -962,8 +1034,10 @@ onMounted(async () => {
 }
 
 .run-id {
+  display: inline-block;
   font-family: var(--td-font-family-mono, monospace);
   font-size: 12px;
+  cursor: help;
 }
 
 .evaluation-detail {
@@ -994,7 +1068,78 @@ onMounted(async () => {
 }
 
 .evaluation-detail__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
   margin-bottom: 20px;
+}
+
+.metric-group {
+  padding: 16px;
+}
+
+.metric-group__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.metric-group__head h4 { margin-bottom: 3px; }
+.metric-group__head p {
+  margin: 0;
+  color: var(--td-text-color-secondary, #666);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.metric-group__head > span {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--td-success-color-1, #eaf7ee);
+  color: var(--td-success-color, #2ba471);
+  font-size: 11px;
+}
+
+.rag-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.rag-metric-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 11px;
+  border-radius: 7px;
+  background: var(--td-bg-color-secondarycontainer, #f7f8fa);
+}
+
+.rag-metric-card > span,
+.rag-metric-card small {
+  color: var(--td-text-color-secondary, #666);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.rag-metric-card strong {
+  margin: 5px 0 3px;
+  color: var(--td-brand-color, #0052d9);
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+}
+
+.metric-group--compact {
+  align-self: start;
+}
+
+.metric-group--compact .metric-table { margin-bottom: 0; }
+.metric-group--compact .metric-table td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .evaluation-detail-error {
@@ -1062,12 +1207,21 @@ onMounted(async () => {
   }
 
   .evaluation-run__form,
-  .chunking-grid {
+  .chunking-grid,
+  .evaluation-detail__metrics,
+  .rag-metric-grid {
     grid-template-columns: 1fr;
   }
 
   .evaluation-run__head {
     flex-direction: column;
   }
+
+  .evaluation-run__actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .evaluation-run__progress { min-width: 0; }
 }
 </style>
