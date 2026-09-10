@@ -11,5 +11,5 @@ result:
 repository:
   url: "https://github.com/Li-QingS/WeKnora.git"
   branch: "feat/evaluation-persistence"
-  commit: "501f957e584f99f1d231466fa27fa0c0ccd25980"
+  commit: "098ab7c68fd6318c1572d3bc944c3dac0ae70d3f"
   tag: "rhino-2026-final-3"

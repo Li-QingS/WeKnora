@@ -6,7 +6,7 @@
 
 - 课题：腾讯犀牛鸟 WeKnora 开源训练营课题三「质量评测基线与成本可观测」
 - 最终 Tag：`rhino-2026-final-3`
-- 完整 Commit：`501f957e584f99f1d231466fa27fa0c0ccd25980`
+- 完整 Commit：`098ab7c68fd6318c1572d3bc944c3dac0ae70d3f`
 - 代码链接：<https://github.com/Li-QingS/WeKnora/tree/rhino-2026-final-3>
 - 开发分支：`feat/evaluation-persistence`
 - 上游基线：腾讯 `upstream/main` 提交 `b60351f86128d22bfa998b13989530917d32ef2b` 已合并。
