@@ -8,56 +8,71 @@
     "document": "4161dcf6-b572-4608-a285-551cb32246d9",
     "formula": "cache_read_tokens / prompt_tokens",
     "before_source": "docs/evidence/wiki-cache-2026-09-08/wiki-cache-summary.json",
-    "notes": "prompt_tokens includes cache reads, explicit cache writes, and misses"
+    "notes": "prompt_tokens includes cache reads, explicit cache writes, and misses",
+    "initial_baseline_definition": "median of baseline_1..baseline_4 captured before project-specific Wiki prompt-cache optimization",
+    "initial_baseline_source": "docs/evidence/wiki-cache-2026-09-08/wiki-cache-summary.json comparison[].baseline_hit_rate_median",
+    "incremental_baseline_definition": "2026-09-08 current_cold/current_warm after the first prompt-stability changes"
   },
   "comparison": [
     {
       "scope": "all_wiki",
-      "comparison": "cold_to_cold",
-      "before_cache_read_rate": 0.1477841704245063,
+      "label": "全部 Wiki 调用",
+      "comparison": "initial_to_final_cold",
+      "baseline_definition": "median of baseline_1..baseline_4 before project-specific Wiki prompt-cache optimization",
+      "before_cache_read_rate": 0.1400772045959418,
       "after_cache_read_rate": 0.17187927179575527,
-      "delta_percentage_points": 2.4095101371248955,
-      "relative_change": 0.1630425051751916
+      "delta_percentage_points": 3.180206719981346,
+      "relative_change": 0.22703242323794062
     },
     {
       "scope": "all_wiki",
-      "comparison": "warm_to_warm",
-      "before_cache_read_rate": 0.16461412922901053,
+      "label": "全部 Wiki 调用",
+      "comparison": "initial_to_final_warm",
+      "baseline_definition": "median of baseline_1..baseline_4 before project-specific Wiki prompt-cache optimization",
+      "before_cache_read_rate": 0.1400772045959418,
       "after_cache_read_rate": 0.24972568353650287,
-      "delta_percentage_points": 8.511155430749234,
-      "relative_change": 0.5170367495555954
+      "delta_percentage_points": 10.964847894056106,
+      "relative_change": 0.782771752597765
     },
     {
       "scope": "wiki_page_modify",
-      "comparison": "cold_to_cold",
-      "before_cache_read_rate": 0.19192574301609497,
+      "label": "页面生成",
+      "comparison": "initial_to_final_cold",
+      "baseline_definition": "median of baseline_1..baseline_4 before project-specific Wiki prompt-cache optimization",
+      "before_cache_read_rate": 0.11286803512990336,
       "after_cache_read_rate": 0.199894289377207,
-      "delta_percentage_points": 0.7968546361112022,
-      "relative_change": 0.041518903279399
+      "delta_percentage_points": 8.702625424730364,
+      "relative_change": 0.7710442920986654
     },
     {
       "scope": "wiki_page_modify",
-      "comparison": "warm_to_warm",
-      "before_cache_read_rate": 0.20950573151394944,
+      "label": "页面生成",
+      "comparison": "initial_to_final_warm",
+      "baseline_definition": "median of baseline_1..baseline_4 before project-specific Wiki prompt-cache optimization",
+      "before_cache_read_rate": 0.11286803512990336,
       "after_cache_read_rate": 0.2148831516195571,
-      "delta_percentage_points": 0.5377420105607655,
-      "relative_change": 0.025667174194943687
+      "delta_percentage_points": 10.201511648965374,
+      "relative_change": 0.903844178488988
     },
     {
       "scope": "wiki_chunk_citation",
-      "comparison": "cold_to_cold",
-      "before_cache_read_rate": 0.08274792052751799,
+      "label": "引用抽取",
+      "comparison": "initial_to_final_cold",
+      "baseline_definition": "median of baseline_1..baseline_4 before project-specific Wiki prompt-cache optimization",
+      "before_cache_read_rate": 0.10440237911020961,
       "after_cache_read_rate": 0.14862068965517242,
-      "delta_percentage_points": 6.587276912765443,
-      "relative_change": 0.7960655531609195
+      "delta_percentage_points": 4.4218310544962804,
+      "relative_change": 0.42353738412689734
     },
     {
       "scope": "wiki_chunk_citation",
-      "comparison": "warm_to_warm",
-      "before_cache_read_rate": 0.09826836134095368,
+      "label": "引用抽取",
+      "comparison": "initial_to_final_warm",
+      "baseline_definition": "median of baseline_1..baseline_4 before project-specific Wiki prompt-cache optimization",
+      "before_cache_read_rate": 0.10440237911020961,
       "after_cache_read_rate": 0.15337615988579587,
-      "delta_percentage_points": 5.510779854484219,
-      "relative_change": 0.5607888214767229
+      "delta_percentage_points": 4.897378077558626,
+      "relative_change": 0.4690868272636621
     }
   ],
   "reference_runs": [
@@ -280,6 +295,76 @@
       "cache_miss_tokens": 72,
       "duration_ms": 78781,
       "cache_read_rate": 0.0
+    }
+  ],
+  "incremental_comparison_2026_09_08_to_2026_09_10": [
+    {
+      "scope": "all_wiki",
+      "comparison": "cold_to_cold",
+      "before_cache_read_rate": 0.1477841704245063,
+      "after_cache_read_rate": 0.17187927179575527,
+      "delta_percentage_points": 2.4095101371248955,
+      "relative_change": 0.1630425051751916
+    },
+    {
+      "scope": "all_wiki",
+      "comparison": "warm_to_warm",
+      "before_cache_read_rate": 0.16461412922901053,
+      "after_cache_read_rate": 0.24972568353650287,
+      "delta_percentage_points": 8.511155430749234,
+      "relative_change": 0.5170367495555954
+    },
+    {
+      "scope": "wiki_page_modify",
+      "comparison": "cold_to_cold",
+      "before_cache_read_rate": 0.19192574301609497,
+      "after_cache_read_rate": 0.199894289377207,
+      "delta_percentage_points": 0.7968546361112022,
+      "relative_change": 0.041518903279399
+    },
+    {
+      "scope": "wiki_page_modify",
+      "comparison": "warm_to_warm",
+      "before_cache_read_rate": 0.20950573151394944,
+      "after_cache_read_rate": 0.2148831516195571,
+      "delta_percentage_points": 0.5377420105607655,
+      "relative_change": 0.025667174194943687
+    },
+    {
+      "scope": "wiki_chunk_citation",
+      "comparison": "cold_to_cold",
+      "before_cache_read_rate": 0.08274792052751799,
+      "after_cache_read_rate": 0.14862068965517242,
+      "delta_percentage_points": 6.587276912765443,
+      "relative_change": 0.7960655531609195
+    },
+    {
+      "scope": "wiki_chunk_citation",
+      "comparison": "warm_to_warm",
+      "before_cache_read_rate": 0.09826836134095368,
+      "after_cache_read_rate": 0.15337615988579587,
+      "delta_percentage_points": 5.510779854484219,
+      "relative_change": 0.5607888214767229
+    }
+  ],
+  "initial_baseline_medians": [
+    {
+      "scope": "all_wiki",
+      "label": "全部 Wiki 调用",
+      "run_count": 4,
+      "cache_read_rate_median": 0.1400772045959418
+    },
+    {
+      "scope": "wiki_page_modify",
+      "label": "页面生成",
+      "run_count": 4,
+      "cache_read_rate_median": 0.11286803512990336
+    },
+    {
+      "scope": "wiki_chunk_citation",
+      "label": "引用抽取",
+      "run_count": 4,
+      "cache_read_rate_median": 0.10440237911020961
     }
   ]
 }
