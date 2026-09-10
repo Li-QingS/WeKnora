@@ -138,13 +138,13 @@
 
       <div class="usage-section">
         <div class="usage-section__head">
-          <h3>Embedding 向量复用（进程内累计）</h3>
+          <h3>文档向量化复用（进程内累计）</h3>
           <t-tag v-if="cacheStats" :theme="cacheEnabled ? 'success' : 'default'" size="small" variant="light">
             {{ cacheEnabled ? '已开启' : '未开启' }}
           </t-tag>
         </div>
         <p class="cache-metric-hint">
-          复用率包含 SQL 命中和请求合并；格式归一命中是由 BOM、换行或首尾空白统一后新增的命中。
+          这里只统计文档上传、重解析和重建索引时的 Chunk/FAQ 向量化。Wiki 实体与概念评测、RAG 查询和模型连接测试不计入；服务重启后计数重新开始。复用率包含 SQL 命中和请求合并。
         </p>
         <table class="usage-table">
           <thead>
@@ -162,10 +162,10 @@
             <tr v-if="cacheStats && !cacheStats.enabled">
               <td colspan="7" class="empty-cell">Embedding 缓存未开启</td>
             </tr>
-            <tr v-else-if="cacheStats && embeddingModels.length === 0">
-              <td colspan="7" class="empty-cell">暂无数据</td>
+            <tr v-else-if="cacheStats && documentEmbeddingModels.length === 0">
+              <td colspan="7" class="empty-cell">本次启动后暂无文档向量化数据</td>
             </tr>
-            <tr v-for="model in embeddingModels" :key="model.model_id">
+            <tr v-for="model in documentEmbeddingModels" :key="model.model_id">
               <td>{{ model.model_name || model.model_id }}</td>
               <td>{{ effectiveEmbeddingReuseRate(model) }}</td>
               <td>{{ model.hits }}</td>
@@ -241,12 +241,14 @@ import {
   upsertModelPrice,
 } from '@/api/model/usage'
 import type {
+  EmbeddingCacheCounterStats,
   EmbeddingCacheStats,
   ModelCallRecord,
   ModelCallSummaryItem,
   ModelPrice,
 } from '@/api/model/usage'
 import { modelUsageDateBounds } from './modelUsageDateRange'
+import { documentEmbeddingCacheModels } from './modelUsageEmbeddingStats'
 
 const summary = ref<ModelCallSummaryItem[]>([])
 const records = ref<ModelCallRecord[]>([])
@@ -270,7 +272,7 @@ const pagedSummary = computed(() => {
   const start = (summaryPage.value - 1) * summaryPageSize.value
   return summary.value.slice(start, start + summaryPageSize.value)
 })
-const embeddingModels = computed(() => cacheStats.value?.models ?? [])
+const documentEmbeddingModels = computed(() => documentEmbeddingCacheModels(cacheStats.value))
 const priceModels = computed(() =>
   allModels.value.filter((model) => {
     if (!model.id || model.source !== 'remote') return false
@@ -298,7 +300,7 @@ function chatCacheRate(item: ModelCallSummaryItem): string {
   return `${((item.cache_read_tokens / denominator) * 100).toFixed(1)}%`
 }
 
-function effectiveEmbeddingReuseRate(model: NonNullable<EmbeddingCacheStats['models']>[number]): string {
+function effectiveEmbeddingReuseRate(model: EmbeddingCacheCounterStats): string {
   const coalesced = model.coalesced_requests || 0
   const total = model.hits + model.misses + coalesced
   if (total <= 0) return '-'

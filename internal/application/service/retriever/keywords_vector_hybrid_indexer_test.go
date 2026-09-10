@@ -14,10 +14,12 @@ type capturingEmbedder struct {
 	embedding.Embedder
 	text       string
 	batchTexts []string
+	workload   embedding.CacheWorkload
 }
 
 func (e *capturingEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
 	e.text = text
+	e.workload = embedding.CacheWorkloadFromContext(ctx)
 	return []float32{1}, nil
 }
 
@@ -27,6 +29,7 @@ func (e *capturingEmbedder) BatchEmbedWithPool(
 	texts []string,
 ) ([][]float32, error) {
 	e.batchTexts = append([]string(nil), texts...)
+	e.workload = embedding.CacheWorkloadFromContext(ctx)
 	embeddings := make([][]float32, len(texts))
 	for i := range texts {
 		embeddings[i] = []float32{1}
@@ -65,6 +68,9 @@ func TestIndexRemovesInlineImagePayloadBeforeEmbedding(t *testing.T) {
 		t.Fatalf("Index returned error: %v", err)
 	}
 	assertImagePayloadRemoved(t, embedder.text, payload)
+	if embedder.workload != embedding.CacheWorkloadDocumentIndex {
+		t.Fatalf("embedding workload = %q, want document_index", embedder.workload)
+	}
 }
 
 func TestBatchIndexRemovesInlineImagePayloadBeforeEmbedding(t *testing.T) {
@@ -85,6 +91,9 @@ func TestBatchIndexRemovesInlineImagePayloadBeforeEmbedding(t *testing.T) {
 		t.Fatalf("expected one embedding input, got %d", len(embedder.batchTexts))
 	}
 	assertImagePayloadRemoved(t, embedder.batchTexts[0], payload)
+	if embedder.workload != embedding.CacheWorkloadDocumentIndex {
+		t.Fatalf("embedding workload = %q, want document_index", embedder.workload)
+	}
 }
 
 func TestBatchIndexTruncatesOversizedEmbeddingInput(t *testing.T) {

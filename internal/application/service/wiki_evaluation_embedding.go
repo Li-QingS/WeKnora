@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/models/embedding"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -36,6 +37,7 @@ func (p *wikiEmbeddingProvider) Embed(
 	// limits are respected through BATCH_EMBED_SIZE. Calling BatchEmbed
 	// directly sends every unmatched label in one request, which providers
 	// with small caps (for example, 20 inputs) reject.
+	ctx = embedding.WithCacheWorkload(ctx, embedding.CacheWorkloadWikiEvaluation)
 	vectors, err := model.BatchEmbedWithPool(ctx, model, texts)
 	if err != nil {
 		return nil, fmt.Errorf("embed wiki evaluation labels: %w", err)

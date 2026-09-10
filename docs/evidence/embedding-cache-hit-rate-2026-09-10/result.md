@@ -18,6 +18,12 @@
 
 它不缓存大模型生成的 Wiki 页面、实体/概念候选或引用抽取结果。Wiki LLM 生成阶段的 Prompt Cache 是后一项独立优化，读取复用率按 `cache_read_tokens / prompt_tokens` 统计；显式缓存写入也包含在 `prompt_tokens` 中。
 
+## 模型用量页面的统计口径
+
+模型用量页面主指标现为 **文档向量化复用（进程内累计）**，只统计文档上传、重解析、重建索引以及 FAQ 入库时的 Chunk/FAQ Embedding。Wiki 评测用于实体与概念语义对齐的标签 Embedding、RAG 查询向量和模型连接测试不计入该复用率，避免一次性评测标签稀释文档缓存效果。
+
+缓存能力仍对所有阶段生效，分类只影响观测统计，不参与缓存键计算，因此不会阻止不同阶段复用同一个向量。分用途计数从本次版本启动后开始累计，服务重启后清零；SQL 中的向量和历史 `hits` 继续持久保存。本文“开发前真实数据基线”是 SQL 全阶段历史数据，不能与页面的文档向量化进程指标直接比较。
+
 ## 修改位置
 
 | 位置 | 修改内容 |
@@ -27,9 +33,13 @@
 | `internal/models/embedding/cache_flight.go` | 合并同进程并发冷请求，并让等待者各自响应 Context 取消 |
 | `internal/models/embedding/cache.go`、`internal/types/embedding_cache.go` | 增加格式归一命中、合并请求和 Provider 调用统计 |
 | `frontend/src/views/settings/ModelUsageSettings.vue` | 在模型用量页面展示新增缓存指标 |
+| `internal/models/embedding/cache_workload.go` | 标记文档索引、Wiki 评测和其他 Embedding 调用用途 |
+| `internal/application/service/retriever/keywords_vector_hybrid_indexer.go` | 将索引阶段归入文档向量化统计 |
+| `internal/application/service/wiki_evaluation_embedding.go` | 将语义标签向量归入 Wiki 评测统计并从页面主指标排除 |
 | `cmd/embedding-cache-benchmark/main.go` | 固定数据集复现工具 |
 
 本轮核心代码提交为 `13ea76a3`，没有数据库迁移。
+后续的统计口径修正同样没有数据库迁移，只增加进程内用途计数与页面筛选。
 
 ## 修改前后对比
 

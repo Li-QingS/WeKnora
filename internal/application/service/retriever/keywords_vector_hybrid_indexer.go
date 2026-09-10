@@ -70,6 +70,7 @@ func (v *KeywordsVectorHybridRetrieveEngineService) Retrieve(ctx context.Context
 func (v *KeywordsVectorHybridRetrieveEngineService) Index(ctx context.Context,
 	embedder embedding.Embedder, indexInfo *types.IndexInfo, retrieverTypes []types.RetrieverType,
 ) error {
+	ctx = embedding.WithCacheWorkload(ctx, embedding.CacheWorkloadDocumentIndex)
 	params := make(map[string]any)
 	embeddingMap := make(map[string][]float32)
 	if slices.Contains(retrieverTypes, types.VectorRetrieverType) {
@@ -88,6 +89,7 @@ func (v *KeywordsVectorHybridRetrieveEngineService) Index(ctx context.Context,
 func (v *KeywordsVectorHybridRetrieveEngineService) BatchIndex(ctx context.Context,
 	embedder embedding.Embedder, indexInfoList []*types.IndexInfo, retrieverTypes []types.RetrieverType,
 ) error {
+	ctx = embedding.WithCacheWorkload(ctx, embedding.CacheWorkloadDocumentIndex)
 	if len(indexInfoList) == 0 {
 		return nil
 	}

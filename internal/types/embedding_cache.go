@@ -47,8 +47,21 @@ type EmbeddingCacheStats struct {
 // CoalescedRequests counts logical inputs served by an in-flight request or
 // batch deduplication, and ProviderCalls counts model HTTP requests.
 type EmbeddingCacheModelStats struct {
-	ModelID           string `json:"model_id"`
-	ModelName         string `json:"model_name"`
+	ModelID           string                        `json:"model_id"`
+	ModelName         string                        `json:"model_name"`
+	Hits              int64                         `json:"hits"`
+	NormalizedHits    int64                         `json:"normalized_hits"`
+	CoalescedRequests int64                         `json:"coalesced_requests"`
+	Misses            int64                         `json:"misses"`
+	ProviderCalls     int64                         `json:"provider_calls"`
+	Workloads         []EmbeddingCacheWorkloadStats `json:"workloads"`
+}
+
+// EmbeddingCacheWorkloadStats breaks a model's process counters down by the
+// business stage that requested the vector. Workload does not affect cache
+// identity: a vector created by one stage can still be reused by another.
+type EmbeddingCacheWorkloadStats struct {
+	Workload          string `json:"workload"`
 	Hits              int64  `json:"hits"`
 	NormalizedHits    int64  `json:"normalized_hits"`
 	CoalescedRequests int64  `json:"coalesced_requests"`

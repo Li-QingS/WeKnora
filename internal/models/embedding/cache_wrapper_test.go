@@ -107,6 +107,59 @@ func TestCachedEmbedderSingleHit(t *testing.T) {
 	}
 }
 
+func TestCacheStatsSeparateDocumentIndexFromWikiEvaluation(t *testing.T) {
+	cache := newFakeCache()
+	SetEmbeddingCache(cache)
+	defer SetEmbeddingCache(nil)
+	ResetCacheStats()
+
+	inner := &countingEmbedder{}
+	c := &cachedEmbedder{
+		inner: inner, cache: cache, tenantID: 7,
+		modelID: inner.GetModelID(), modelName: inner.GetModelName(),
+	}
+	documentCtx := WithCacheWorkload(context.Background(), CacheWorkloadDocumentIndex)
+	wikiCtx := WithCacheWorkload(context.Background(), CacheWorkloadWikiEvaluation)
+
+	_, err := c.Embed(documentCtx, "document chunk")
+	if err != nil {
+		t.Fatalf("document miss: %v", err)
+	}
+	_, err = c.Embed(documentCtx, "document chunk")
+	if err != nil {
+		t.Fatalf("document hit: %v", err)
+	}
+	_, err = c.Embed(wikiCtx, "wiki label")
+	if err != nil {
+		t.Fatalf("wiki miss: %v", err)
+	}
+	_, err = c.Embed(context.Background(), "legacy unlabelled input")
+	if err != nil {
+		t.Fatalf("unlabelled miss: %v", err)
+	}
+
+	stats := CacheStats()
+	if stats.Hits != 1 || stats.Misses != 3 || len(stats.Models) != 1 {
+		t.Fatalf("aggregate stats=%+v, want hits=1 misses=3 and one model", stats)
+	}
+	workloads := make(map[string]types.EmbeddingCacheWorkloadStats)
+	for _, workload := range stats.Models[0].Workloads {
+		workloads[workload.Workload] = workload
+	}
+	document := workloads[string(CacheWorkloadDocumentIndex)]
+	if document.Hits != 1 || document.Misses != 1 || document.ProviderCalls != 1 {
+		t.Errorf("document workload=%+v, want hits=1 misses=1 provider_calls=1", document)
+	}
+	wiki := workloads[string(CacheWorkloadWikiEvaluation)]
+	if wiki.Hits != 0 || wiki.Misses != 1 || wiki.ProviderCalls != 1 {
+		t.Errorf("wiki workload=%+v, want hits=0 misses=1 provider_calls=1", wiki)
+	}
+	other := workloads[string(CacheWorkloadOther)]
+	if other.Hits != 0 || other.Misses != 1 || other.ProviderCalls != 1 {
+		t.Errorf("other workload=%+v, want hits=0 misses=1 provider_calls=1", other)
+	}
+}
+
 func TestCanonicalizeCacheTextIsConservative(t *testing.T) {
 	input := "  \ufeffCafe\u0301  \r\n\tindented  \t\r\n\r\nend  \n"
 	want := "Café\n\tindented\n\nend"

@@ -31,23 +31,23 @@ func (c *cachedEmbedder) Embed(ctx context.Context, text string) ([]float32, err
 	if !leader {
 		vector, err := flight.wait(ctx)
 		if err == nil {
-			recordCoalescedRequest(c.modelID, c.modelName)
+			recordCoalescedRequest(ctx, c.modelID, c.modelName)
 		}
 		return vector, err
 	}
 
 	if vector, ok, primary := c.lookupCache(ctx, &lookup); ok {
-		recordCacheHit(c.modelID, c.modelName)
+		recordCacheHit(ctx, c.modelID, c.modelName)
 		if primary && lookup.normalized {
-			recordNormalizedCacheHit(c.modelID, c.modelName)
+			recordNormalizedCacheHit(ctx, c.modelID, c.modelName)
 		}
 		embeddingCacheFlights.complete(flightKey, flight, vector, nil)
 		return append([]float32(nil), vector...), nil
 	}
 
-	recordCacheMiss(c.modelID, c.modelName)
+	recordCacheMiss(ctx, c.modelID, c.modelName)
 	vector, err := c.inner.Embed(ctx, lookup.text)
-	recordProviderCall(c.modelID, c.modelName)
+	recordProviderCall(ctx, c.modelID, c.modelName)
 	if err != nil {
 		embeddingCacheFlights.complete(flightKey, flight, nil, err)
 		return nil, err
@@ -105,27 +105,27 @@ func (c *cachedEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 		vector, ok, primary := c.lookupCache(ctx, &group.lookup)
 		if ok {
 			for _, index := range group.indexes {
-				recordCacheHit(c.modelID, c.modelName)
+				recordCacheHit(ctx, c.modelID, c.modelName)
 				results[index] = append([]float32(nil), vector...)
 			}
 			if primary {
 				for range group.normalizedCount {
-					recordNormalizedCacheHit(c.modelID, c.modelName)
+					recordNormalizedCacheHit(ctx, c.modelID, c.modelName)
 				}
 			}
 			embeddingCacheFlights.complete(group.flightKey, group.flight, vector, nil)
 			continue
 		}
-		recordCacheMiss(c.modelID, c.modelName)
+		recordCacheMiss(ctx, c.modelID, c.modelName)
 		for range len(group.indexes) - 1 {
-			recordCoalescedRequest(c.modelID, c.modelName)
+			recordCoalescedRequest(ctx, c.modelID, c.modelName)
 		}
 		missingLeaders = append(missingLeaders, group)
 		missingTexts = append(missingTexts, group.lookup.text)
 	}
 	if len(missingLeaders) > 0 {
 		vectors, err := c.inner.BatchEmbed(ctx, missingTexts)
-		recordProviderCall(c.modelID, c.modelName)
+		recordProviderCall(ctx, c.modelID, c.modelName)
 		if err == nil && len(vectors) != len(missingLeaders) {
 			err = fmt.Errorf("embedding provider returned %d vectors for %d inputs", len(vectors), len(missingLeaders))
 		}
@@ -161,7 +161,7 @@ func (c *cachedEmbedder) BatchEmbed(ctx context.Context, texts []string) ([][]fl
 			return nil, err
 		}
 		for _, index := range group.indexes {
-			recordCoalescedRequest(c.modelID, c.modelName)
+			recordCoalescedRequest(ctx, c.modelID, c.modelName)
 			results[index] = append([]float32(nil), vector...)
 		}
 	}

@@ -36,6 +36,15 @@ type modelCacheStats struct {
 	coalesced      int64
 	misses         int64
 	providerCalls  int64
+	workloads      map[CacheWorkload]*workloadCacheStats
+}
+
+type workloadCacheStats struct {
+	hits           int64
+	normalizedHits int64
+	coalesced      int64
+	misses         int64
+	providerCalls  int64
 }
 
 // SetEmbeddingCache installs the process-wide embedding cache. Tests may
@@ -66,6 +75,18 @@ func CacheStats() types.EmbeddingCacheStats {
 	modelStatsMu.Lock()
 	defer modelStatsMu.Unlock()
 	for _, model := range modelStats {
+		workloads := make([]types.EmbeddingCacheWorkloadStats, 0, len(model.workloads))
+		for workload, counters := range model.workloads {
+			workloads = append(workloads, types.EmbeddingCacheWorkloadStats{
+				Workload:          string(workload),
+				Hits:              counters.hits,
+				NormalizedHits:    counters.normalizedHits,
+				CoalescedRequests: counters.coalesced,
+				Misses:            counters.misses,
+				ProviderCalls:     counters.providerCalls,
+			})
+		}
+		sort.Slice(workloads, func(i, j int) bool { return workloads[i].Workload < workloads[j].Workload })
 		stats.Models = append(stats.Models, types.EmbeddingCacheModelStats{
 			ModelID:           model.modelID,
 			ModelName:         model.modelName,
@@ -74,6 +95,7 @@ func CacheStats() types.EmbeddingCacheStats {
 			CoalescedRequests: model.coalesced,
 			Misses:            model.misses,
 			ProviderCalls:     model.providerCalls,
+			Workloads:         workloads,
 		})
 	}
 	sort.Slice(stats.Models, func(i, j int) bool {
@@ -97,38 +119,56 @@ func ResetCacheStats() {
 	modelStatsMu.Unlock()
 }
 
-func recordCacheHit(modelID, modelName string) {
+func recordCacheHit(ctx context.Context, modelID, modelName string) {
 	statsHits.Add(1)
-	recordModelStat(modelID, modelName, func(s *modelCacheStats) { s.hits++ })
+	recordModelStat(ctx, modelID, modelName, func(s *workloadCacheStats) { s.hits++ }, func(s *modelCacheStats) { s.hits++ })
 }
 
-func recordNormalizedCacheHit(modelID, modelName string) {
+func recordNormalizedCacheHit(ctx context.Context, modelID, modelName string) {
 	statsNormalizedHits.Add(1)
-	recordModelStat(modelID, modelName, func(s *modelCacheStats) { s.normalizedHits++ })
+	recordModelStat(ctx, modelID, modelName, func(s *workloadCacheStats) { s.normalizedHits++ }, func(s *modelCacheStats) { s.normalizedHits++ })
 }
 
-func recordCoalescedRequest(modelID, modelName string) {
+func recordCoalescedRequest(ctx context.Context, modelID, modelName string) {
 	statsCoalesced.Add(1)
-	recordModelStat(modelID, modelName, func(s *modelCacheStats) { s.coalesced++ })
+	recordModelStat(ctx, modelID, modelName, func(s *workloadCacheStats) { s.coalesced++ }, func(s *modelCacheStats) { s.coalesced++ })
 }
 
-func recordCacheMiss(modelID, modelName string) {
+func recordCacheMiss(ctx context.Context, modelID, modelName string) {
 	statsMisses.Add(1)
-	recordModelStat(modelID, modelName, func(s *modelCacheStats) { s.misses++ })
+	recordModelStat(ctx, modelID, modelName, func(s *workloadCacheStats) { s.misses++ }, func(s *modelCacheStats) { s.misses++ })
 }
 
-func recordProviderCall(modelID, modelName string) {
+func recordProviderCall(ctx context.Context, modelID, modelName string) {
 	statsProviderCalls.Add(1)
-	recordModelStat(modelID, modelName, func(s *modelCacheStats) { s.providerCalls++ })
+	recordModelStat(ctx, modelID, modelName, func(s *workloadCacheStats) { s.providerCalls++ }, func(s *modelCacheStats) { s.providerCalls++ })
 }
 
-func recordModelStat(modelID, modelName string, mutate func(*modelCacheStats)) {
+func recordModelStat(
+	ctx context.Context,
+	modelID, modelName string,
+	mutateWorkload func(*workloadCacheStats),
+	mutateModel func(*modelCacheStats),
+) {
 	modelStatsMu.Lock()
 	defer modelStatsMu.Unlock()
 	model := modelStats[modelID]
 	if model == nil {
-		model = &modelCacheStats{modelID: modelID, modelName: modelName}
+		model = &modelCacheStats{
+			modelID: modelID, modelName: modelName,
+			workloads: make(map[CacheWorkload]*workloadCacheStats),
+		}
 		modelStats[modelID] = model
 	}
-	mutate(model)
+	if model.workloads == nil {
+		model.workloads = make(map[CacheWorkload]*workloadCacheStats)
+	}
+	workload := CacheWorkloadFromContext(ctx)
+	counters := model.workloads[workload]
+	if counters == nil {
+		counters = &workloadCacheStats{}
+		model.workloads[workload] = counters
+	}
+	mutateModel(model)
+	mutateWorkload(counters)
 }

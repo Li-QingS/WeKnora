@@ -55,22 +55,25 @@ export interface ModelPrice {
   currency?: string
 }
 
-export interface EmbeddingCacheStats {
-  enabled: boolean
+export interface EmbeddingCacheCounterStats {
   hits: number
   normalized_hits: number
   coalesced_requests: number
   misses: number
   provider_calls: number
+}
+
+export interface EmbeddingCacheWorkloadStats extends EmbeddingCacheCounterStats {
+  workload: string
+}
+
+export interface EmbeddingCacheStats extends EmbeddingCacheCounterStats {
+  enabled: boolean
   models?: Array<{
     model_id: string
     model_name: string
-    hits: number
-    normalized_hits: number
-    coalesced_requests: number
-    misses: number
-    provider_calls: number
-  }>
+    workloads?: EmbeddingCacheWorkloadStats[]
+  } & EmbeddingCacheCounterStats>
 }
 
 export function listModelCalls(params: Record<string, unknown>): Promise<{ data: ModelCallRecord[]; total: number }> {

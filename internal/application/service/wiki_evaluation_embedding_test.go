@@ -27,9 +27,10 @@ func (s wikiEvaluationEmbeddingModelService) GetEmbeddingModel(
 }
 
 type providerCappedWikiEmbedder struct {
-	pooler embedding.EmbedderPooler
-	mu     sync.Mutex
-	sizes  []int
+	pooler    embedding.EmbedderPooler
+	mu        sync.Mutex
+	sizes     []int
+	workloads []embedding.CacheWorkload
 }
 
 func (e *providerCappedWikiEmbedder) Embed(_ context.Context, text string) ([]float32, error) {
@@ -45,6 +46,7 @@ func (e *providerCappedWikiEmbedder) BatchEmbed(
 	}
 	e.mu.Lock()
 	e.sizes = append(e.sizes, len(texts))
+	e.workloads = append(e.workloads, embedding.CacheWorkloadFromContext(ctx))
 	e.mu.Unlock()
 	vectors := make([][]float32, len(texts))
 	for index, text := range texts {
@@ -89,7 +91,11 @@ func TestWikiEmbeddingProviderUsesPoolAwareBatching(t *testing.T) {
 
 	model.mu.Lock()
 	sizes := append([]int(nil), model.sizes...)
+	workloads := append([]embedding.CacheWorkload(nil), model.workloads...)
 	model.mu.Unlock()
 	sort.Ints(sizes)
 	require.Equal(t, []int{5, 20, 20}, sizes)
+	for _, workload := range workloads {
+		require.Equal(t, embedding.CacheWorkloadWikiEvaluation, workload)
+	}
 }
