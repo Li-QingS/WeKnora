@@ -1,0 +1,285 @@
+{
+  "schema_version": 1,
+  "metadata": {
+    "generated_at": "2026-09-10T09:40:30+08:00",
+    "rollback_tag": "wiki-generation-cache-baseline-20260910",
+    "rollback_commit": "b17f686e361ca599",
+    "knowledge_base": "619b2638-3778-4e30-b015-2f687c33a3e4",
+    "document": "4161dcf6-b572-4608-a285-551cb32246d9",
+    "formula": "cache_read_tokens / prompt_tokens",
+    "before_source": "docs/evidence/wiki-cache-2026-09-08/wiki-cache-summary.json",
+    "notes": "prompt_tokens includes cache reads, explicit cache writes, and misses"
+  },
+  "comparison": [
+    {
+      "scope": "all_wiki",
+      "comparison": "cold_to_cold",
+      "before_cache_read_rate": 0.1477841704245063,
+      "after_cache_read_rate": 0.17187927179575527,
+      "delta_percentage_points": 2.4095101371248955,
+      "relative_change": 0.1630425051751916
+    },
+    {
+      "scope": "all_wiki",
+      "comparison": "warm_to_warm",
+      "before_cache_read_rate": 0.16461412922901053,
+      "after_cache_read_rate": 0.24972568353650287,
+      "delta_percentage_points": 8.511155430749234,
+      "relative_change": 0.5170367495555954
+    },
+    {
+      "scope": "wiki_page_modify",
+      "comparison": "cold_to_cold",
+      "before_cache_read_rate": 0.19192574301609497,
+      "after_cache_read_rate": 0.199894289377207,
+      "delta_percentage_points": 0.7968546361112022,
+      "relative_change": 0.041518903279399
+    },
+    {
+      "scope": "wiki_page_modify",
+      "comparison": "warm_to_warm",
+      "before_cache_read_rate": 0.20950573151394944,
+      "after_cache_read_rate": 0.2148831516195571,
+      "delta_percentage_points": 0.5377420105607655,
+      "relative_change": 0.025667174194943687
+    },
+    {
+      "scope": "wiki_chunk_citation",
+      "comparison": "cold_to_cold",
+      "before_cache_read_rate": 0.08274792052751799,
+      "after_cache_read_rate": 0.14862068965517242,
+      "delta_percentage_points": 6.587276912765443,
+      "relative_change": 0.7960655531609195
+    },
+    {
+      "scope": "wiki_chunk_citation",
+      "comparison": "warm_to_warm",
+      "before_cache_read_rate": 0.09826836134095368,
+      "after_cache_read_rate": 0.15337615988579587,
+      "delta_percentage_points": 5.510779854484219,
+      "relative_change": 0.5607888214767229
+    }
+  ],
+  "reference_runs": [
+    {
+      "run_id": "old_cold",
+      "phase": "2026-09-08优化前参考冷运行",
+      "scope": "all_wiki",
+      "prompt_tokens": 257240,
+      "cache_read_tokens": 38016,
+      "cache_write_tokens": 0,
+      "cache_miss_tokens": 219224,
+      "cache_read_rate": 0.1477841704245063
+    },
+    {
+      "run_id": "old_cold",
+      "phase": "2026-09-08优化前参考冷运行",
+      "scope": "wiki_page_modify",
+      "prompt_tokens": 168065,
+      "cache_read_tokens": 32256,
+      "cache_write_tokens": 0,
+      "cache_miss_tokens": 135809,
+      "cache_read_rate": 0.19192574301609497
+    },
+    {
+      "run_id": "old_cold",
+      "phase": "2026-09-08优化前参考冷运行",
+      "scope": "wiki_chunk_citation",
+      "prompt_tokens": 69609,
+      "cache_read_tokens": 5760,
+      "cache_write_tokens": 0,
+      "cache_miss_tokens": 63849,
+      "cache_read_rate": 0.08274792052751799
+    },
+    {
+      "run_id": "old_warm",
+      "phase": "2026-09-08优化前参考热运行",
+      "scope": "all_wiki",
+      "prompt_tokens": 265931,
+      "cache_read_tokens": 43776,
+      "cache_write_tokens": 0,
+      "cache_miss_tokens": 222155,
+      "cache_read_rate": 0.16461412922901053
+    },
+    {
+      "run_id": "old_warm",
+      "phase": "2026-09-08优化前参考热运行",
+      "scope": "wiki_page_modify",
+      "prompt_tokens": 175957,
+      "cache_read_tokens": 36864,
+      "cache_write_tokens": 0,
+      "cache_miss_tokens": 139093,
+      "cache_read_rate": 0.20950573151394944
+    },
+    {
+      "run_id": "old_warm",
+      "phase": "2026-09-08优化前参考热运行",
+      "scope": "wiki_chunk_citation",
+      "prompt_tokens": 70338,
+      "cache_read_tokens": 6912,
+      "cache_write_tokens": 0,
+      "cache_miss_tokens": 63426,
+      "cache_read_rate": 0.09826836134095368
+    }
+  ],
+  "final_runs": [
+    {
+      "run_id": "final_cold",
+      "phase": "消息级稳定前缀冷运行",
+      "scope": "all_wiki",
+      "calls": 28,
+      "successful_calls": 28,
+      "prompt_tokens": 267013,
+      "cache_read_tokens": 45894,
+      "cache_write_tokens": 3663,
+      "cache_miss_tokens": 217456,
+      "duration_ms": 383281,
+      "cache_read_rate": 0.17187927179575527
+    },
+    {
+      "run_id": "final_cold",
+      "phase": "消息级稳定前缀冷运行",
+      "scope": "wiki_page_modify",
+      "calls": 16,
+      "successful_calls": 16,
+      "prompt_tokens": 177844,
+      "cache_read_tokens": 35550,
+      "cache_write_tokens": 2370,
+      "cache_miss_tokens": 139924,
+      "duration_ms": 272640,
+      "cache_read_rate": 0.199894289377207
+    },
+    {
+      "run_id": "final_cold",
+      "phase": "消息级稳定前缀冷运行",
+      "scope": "wiki_chunk_citation",
+      "calls": 9,
+      "successful_calls": 9,
+      "prompt_tokens": 69600,
+      "cache_read_tokens": 10344,
+      "cache_write_tokens": 1293,
+      "cache_miss_tokens": 57963,
+      "duration_ms": 81566,
+      "cache_read_rate": 0.14862068965517242
+    },
+    {
+      "run_id": "final_warm",
+      "phase": "消息级稳定前缀重复运行",
+      "scope": "all_wiki",
+      "calls": 28,
+      "successful_calls": 28,
+      "prompt_tokens": 266116,
+      "cache_read_tokens": 66456,
+      "cache_write_tokens": 1343,
+      "cache_miss_tokens": 198317,
+      "duration_ms": 371708,
+      "cache_read_rate": 0.24972568353650287
+    },
+    {
+      "run_id": "final_warm",
+      "phase": "消息级稳定前缀重复运行",
+      "scope": "wiki_page_modify",
+      "calls": 16,
+      "successful_calls": 16,
+      "prompt_tokens": 176468,
+      "cache_read_tokens": 37920,
+      "cache_write_tokens": 0,
+      "cache_miss_tokens": 138548,
+      "duration_ms": 265437,
+      "cache_read_rate": 0.2148831516195571
+    },
+    {
+      "run_id": "final_warm",
+      "phase": "消息级稳定前缀重复运行",
+      "scope": "wiki_chunk_citation",
+      "calls": 9,
+      "successful_calls": 9,
+      "prompt_tokens": 70050,
+      "cache_read_tokens": 10744,
+      "cache_write_tokens": 1343,
+      "cache_miss_tokens": 57963,
+      "duration_ms": 77691,
+      "cache_read_rate": 0.15337615988579587
+    }
+  ],
+  "diagnostic_runs": [
+    {
+      "run_id": "diagnostic_full_tail",
+      "phase": "动态尾部误缓存实验",
+      "scope": "all_wiki",
+      "calls": 28,
+      "successful_calls": 28,
+      "prompt_tokens": 260002,
+      "cache_read_tokens": 9930,
+      "cache_write_tokens": 230264,
+      "cache_miss_tokens": 19808,
+      "duration_ms": 364773,
+      "cache_read_rate": 0.03819201390758532
+    },
+    {
+      "run_id": "diagnostic_full_tail",
+      "phase": "动态尾部误缓存实验",
+      "scope": "wiki_page_modify",
+      "calls": 16,
+      "successful_calls": 16,
+      "prompt_tokens": 170434,
+      "cache_read_tokens": 9930,
+      "cache_write_tokens": 160376,
+      "cache_miss_tokens": 128,
+      "duration_ms": 247364,
+      "cache_read_rate": 0.05826302263632843
+    },
+    {
+      "run_id": "diagnostic_full_tail",
+      "phase": "动态尾部误缓存实验",
+      "scope": "wiki_chunk_citation",
+      "calls": 9,
+      "successful_calls": 9,
+      "prompt_tokens": 69960,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 69888,
+      "cache_miss_tokens": 72,
+      "duration_ms": 80226,
+      "cache_read_rate": 0.0
+    },
+    {
+      "run_id": "diagnostic_content_boundary",
+      "phase": "单消息内容块实验",
+      "scope": "all_wiki",
+      "calls": 28,
+      "successful_calls": 28,
+      "prompt_tokens": 265582,
+      "cache_read_tokens": 9930,
+      "cache_write_tokens": 235876,
+      "cache_miss_tokens": 19776,
+      "duration_ms": 356375,
+      "cache_read_rate": 0.03738958212529463
+    },
+    {
+      "run_id": "diagnostic_content_boundary",
+      "phase": "单消息内容块实验",
+      "scope": "wiki_page_modify",
+      "calls": 16,
+      "successful_calls": 16,
+      "prompt_tokens": 176271,
+      "cache_read_tokens": 9930,
+      "cache_write_tokens": 166213,
+      "cache_miss_tokens": 128,
+      "duration_ms": 246004,
+      "cache_read_rate": 0.05633371342988921
+    },
+    {
+      "run_id": "diagnostic_content_boundary",
+      "phase": "单消息内容块实验",
+      "scope": "wiki_chunk_citation",
+      "calls": 9,
+      "successful_calls": 9,
+      "prompt_tokens": 69735,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 69663,
+      "cache_miss_tokens": 72,
+      "duration_ms": 78781,
+      "cache_read_rate": 0.0
+    }
+  ]
+}

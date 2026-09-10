@@ -1,0 +1,100 @@
+# Wiki 生成阶段缓存命中率优化结果
+
+## 结论
+
+本轮把 Wiki 页面生成和引用抽取的稳定 Prompt 前缀显式标出，并在服务商要求的消息边界创建短期 Context Cache。业务层只提供“消息序号 + UTF-8 字节偏移”，不判断模型名称；传输层按 Provider 协议适配，因此方案不绑定本次验收使用的 `qwen3.7-plus`。
+
+同一知识库、同一文档的真实重复运行结果：
+
+| 范围 | 修改前冷运行 | 修改后冷运行 | 冷运行变化 | 修改前热运行 | 修改后重复运行 | 热运行变化 |
+|---|---:|---:|---:|---:|---:|---:|
+| 全部 Wiki 调用 | 14.78% | 17.19% | **+2.41 pp** | 16.46% | 24.97% | **+8.51 pp** |
+| 页面生成 `wiki_page_modify` | 19.19% | 19.99% | **+0.80 pp** | 20.95% | 21.49% | **+0.54 pp** |
+| 引用抽取 `wiki_chunk_citation` | 8.27% | 14.86% | **+6.59 pp** | 9.83% | 15.34% | **+5.51 pp** |
+
+页面生成原来已有较高的隐式缓存复用，所以新增收益较小；引用抽取原来把变化的 chunks 混在同一消息内，新的边界带来更明显提升。全部 Wiki 热运行还包含候选抽取在 5 分钟窗口内获得的 99.51% 隐式缓存命中，因此 **8.51 pp 不能全部归因于本轮显式断点**；本轮直接效果应以页面生成和引用抽取两行判断。
+
+## 统计口径
+
+- 读取复用率：`cache_read_tokens / prompt_tokens`。
+- `prompt_tokens` 包含缓存读取、显式缓存写入和未命中 Token。
+- 旧数据没有显式缓存写入，所以旧报告的 `read / (read + miss)` 与新口径数值相同。
+- “修改前”来自 `docs/evidence/wiki-cache-2026-09-08/wiki-cache-summary.json` 中同一知识库、同一文档的连续冷/热运行；“修改后”是 2026-09-10 的连续冷/重复运行。
+- 每轮共 28 次 Wiki 模型调用，全部成功；其中页面生成 16 次、引用抽取 9 次。
+
+## 稳定前缀实际复用
+
+| 阶段 | 冷运行首次写入 | 冷运行后续读取 | 重复运行读取 | 说明 |
+|---|---:|---:|---:|---|
+| 页面生成 | 2,370 | 35,550 = 15 × 2,370 | 37,920 = 16 × 2,370 | 冷运行首请求建缓存，后 15 个页面读取；重复运行 16 个页面全部读取 |
+| 引用抽取 | 1,293 | 10,344 = 8 × 1,293 | 10,744 = 8 × 1,343 | 每轮首批写候选集合前缀，后 8 个 chunk 批次读取；第二轮候选集合变化使前缀为 1,343 Token |
+
+引用抽取的跨轮首请求没有命中，是因为两轮间隔超过服务商 5 分钟的短期缓存周期；其批内 8 个后续请求仍全部复用。页面调用位于每轮后半段，第二轮开始页面阶段时上一轮页面缓存仍有效，因此 16 次全部读取。
+
+## 方案
+
+1. **统一断点契约**：`ChatOptions` 增加内部 `PromptCacheBreakpoint`，Wiki 只声明稳定前缀结束位置，不包含模型或服务商判断。
+2. **页面生成边界**：缓存系统规则、共享文档上下文和固定编辑规则；从 `<page_metadata>` 开始的页面元数据、已有页面和新增证据保持动态。
+3. **引用抽取边界**：缓存固定规则及候选实体/概念列表；从 `<chunks>` 开始的分批证据保持动态。
+4. **Provider 适配**：
+   - Anthropic 原生接口在 text content block 上设置缓存点；
+   - 阿里云百炼兼容端点按当前消息级截断协议，把原消息拆为两个同角色消息，只标记稳定消息；
+   - OpenAI、Azure OpenAI、OpenRouter 使用稳定前缀指纹作为缓存路由键；
+   - 其他 generic 端点保持原请求结构。
+5. **首请求预热**：同租户、同模型、同用途、同前缀的并发调用先让一个请求完成缓存写入，再放行同进程内的跟随请求。
+6. **正确统计**：模型用量页面的 Chat 缓存命中率改用 `cache_read_tokens / prompt_tokens`，避免显式缓存写入被排除后显示接近 100% 的假高值。
+
+## 为什么这是通用方案
+
+- 缓存键包含租户、模型 ID、用途和稳定前缀指纹，模型切换后不会误复用旧缓存。
+- 代码没有 `qwen3.7-plus` 或其他模型名白名单；是否注入协议字段由 Provider 类型或经过 hostname 校验的服务端点决定。
+- Wiki 侧断点能被不同 Provider 适配器消费；不支持显式断点的 Provider 仍能使用原有隐式缓存或路由键。
+- generic 百炼端点只有在调用方提供且断点有效时才改写请求，普通聊天、无效断点和非百炼 generic 端点保持 SDK 原路径。
+- 单次最多四个缓存点，符合当前服务商限制。
+
+这里的“通用”指同一套业务断点可跨模型复用，传输协议仍必须由各 Provider 适配。模型服务商如果不支持 Prompt Cache，系统不会凭空获得缓存收益。
+
+## 试验过程与技术判断
+
+真实接口试验先排除了两个看似合理、实际无效的方案：
+
+| 试验 | 页面读取率 | 引用读取率 | 结果 |
+|---|---:|---:|---|
+| 给包含动态尾部的完整消息打缓存点 | 5.83% | 0.00% | 每个动态 Prompt 几乎都重新写缓存 |
+| 在同一消息内拆 text content block | 5.63% | 0.00% | 当前百炼协议仍按整条消息截断，动态尾部被写入 |
+| 最终：拆为同角色的稳定/动态消息 | 19.99%（冷）/ 21.49%（重复） | 14.86%（冷）/ 15.34%（重复） | 稳定前缀按预期一次写入、多次读取 |
+
+没有使用 Redis 或 SQL 保存 Wiki 生成结果。页面合并依赖现有内容和新增证据，持久化输出缓存需要复杂失效规则，也可能返回过期页面。服务商原生短期 Context Cache 直接减少重复输入推理；进程内 warmup 只协调首请求，不保存 Prompt 或模型输出。对单文档的一组引用/页面调用都在同一个 Wiki worker 进程内执行，因此这里不需要额外增加 Redis 分布式锁。
+
+## 修改位置
+
+| 位置 | 修改内容 |
+|---|---|
+| `internal/models/chat/chat.go` | Provider 无关的缓存断点描述 |
+| `internal/models/chat/prompt_cache.go` | URL hostname 校验、Provider 策略、消息级/内容块断点、最多四点和无效断点降级 |
+| `internal/models/chat/remote_api.go` | 把断点和缓存路由键应用到 OpenAI 兼容请求 |
+| `internal/models/chat/anthropic.go`、`anthropic_tools.go` | Anthropic content block 断点和原消息索引映射 |
+| `internal/application/service/wiki_ingest.go` | 页面/引用稳定前缀定位、前缀指纹及首请求预热 |
+| `frontend/src/views/settings/ModelUsageSettings.vue` | 修正显式缓存读取率分母 |
+| 对应 `*_test.go` | 文本等价、角色保持、端点隔离、断点上限、无效断点、并发预热测试 |
+
+本轮没有数据库迁移。
+
+## 证据文件
+
+- `final-cold-calls.csv`、`final-warm-calls.csv`：最终方案逐调用脱敏台账。
+- `final-cold-window.txt`、`final-warm-window.txt`：运行时间窗。
+- `final-cold-rerun.log`、`final-warm-rerun.log`：完整 Wiki 重跑结果。
+- `diagnostic-full-tail-calls.csv`：完整动态消息缓存的负向试验。
+- `diagnostic-content-boundary-calls.csv`：单消息 content block 的负向试验。
+- `summary.json`：可机读聚合和前后变化。
+
+## 回退
+
+远端 annotated tag `wiki-generation-cache-baseline-20260910` 指向开发前提交 `b17f686e361ca599`：
+
+```bash
+git switch -c rollback/wiki-generation-cache-baseline wiki-generation-cache-baseline-20260910
+```
+
+本轮没有迁移，回退只涉及代码。提交后也可以用 `git revert <本轮提交>` 保留后续历史。

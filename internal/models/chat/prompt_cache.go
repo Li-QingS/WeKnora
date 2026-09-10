@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/models/provider"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -196,9 +198,11 @@ func promptCacheSessionID(ctx context.Context, opts *ChatOptions) string {
 }
 
 type promptCachePolicy struct {
-	sendKey          bool
-	sendCacheControl bool
-	sendAffinity     bool
+	sendKey                      bool
+	sendCacheControl             bool
+	sendAffinity                 bool
+	requireCallerCacheBreakpoint bool
+	messageLevelCacheBreakpoint  bool
 }
 
 func promptCachePolicyFor(name provider.ProviderName, baseURL string) promptCachePolicy {
@@ -206,14 +210,41 @@ func promptCachePolicyFor(name provider.ProviderName, baseURL string) promptCach
 	case provider.ProviderOpenAI, provider.ProviderAzureOpenAI, provider.ProviderOpenRouter:
 		return promptCachePolicy{sendKey: true, sendAffinity: true}
 	case provider.ProviderAliyun:
-		return promptCachePolicy{sendCacheControl: true}
+		return promptCachePolicy{sendCacheControl: true, messageLevelCacheBreakpoint: true}
 	case provider.ProviderAnthropic:
 		return promptCachePolicy{sendCacheControl: true}
 	}
-	if strings.Contains(baseURL, "api.openai.com") {
+	if name == provider.ProviderGeneric && isAliyunWorkspaceURL(baseURL) {
+		return promptCachePolicy{
+			sendCacheControl:             true,
+			requireCallerCacheBreakpoint: true,
+			messageLevelCacheBreakpoint:  true,
+		}
+	}
+	if isOpenAIAPIURL(baseURL) {
 		return promptCachePolicy{sendKey: true, sendAffinity: true}
 	}
 	return promptCachePolicy{}
+}
+
+func isOpenAIAPIURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Hostname(), "api.openai.com")
+}
+
+func isAliyunWorkspaceURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "maas.aliyuncs.com" || strings.HasSuffix(host, ".maas.aliyuncs.com")
 }
 
 type cacheControlMarker struct {
@@ -241,6 +272,7 @@ func applyPromptCacheToJSONBody(
 	policy promptCachePolicy,
 	sessionID string,
 	retention CacheRetention,
+	breakpoints ...PromptCacheBreakpoint,
 ) (any, bool, error) {
 	if retention == CacheRetentionNone {
 		return body, false, nil
@@ -266,11 +298,16 @@ func applyPromptCacheToJSONBody(
 		}
 		rewritten = true
 	}
-	if policy.sendCacheControl {
+	if policy.sendCacheControl && (!policy.requireCallerCacheBreakpoint || len(breakpoints) > 0) {
 		marker := cacheControlFor(retention, "1h")
 		if marker != nil {
-			applyCacheControlBreakpoints(payload, marker)
-			rewritten = true
+			if applyCacheControlBreakpoints(
+				payload, marker, breakpoints,
+				policy.messageLevelCacheBreakpoint,
+				policy.requireCallerCacheBreakpoint,
+			) {
+				rewritten = true
+			}
 		}
 	}
 	if !rewritten {
@@ -279,19 +316,144 @@ func applyPromptCacheToJSONBody(
 	return payload, true, nil
 }
 
-func applyCacheControlBreakpoints(payload map[string]any, marker *cacheControlMarker) {
+const maxCacheControlBreakpoints = 4
+
+func applyCacheControlBreakpoints(
+	payload map[string]any,
+	marker *cacheControlMarker,
+	breakpoints []PromptCacheBreakpoint,
+	messageLevelBreakpoint bool,
+	requireCustomBreakpoint bool,
+) bool {
 	if marker == nil {
-		return
+		return false
 	}
-	applyCacheControlToInstructionMessages(payload["messages"], marker)
-	applyCacheControlToLastTool(payload["tools"], marker)
-	applyCacheControlToLastConversationMessage(payload["messages"], marker)
+	remaining := maxCacheControlBreakpoints
+	customApplied := false
+	customMessageIndexes := make(map[int]struct{}, len(breakpoints))
+	if messageLevelBreakpoint {
+		// Aliyun's current explicit-cache protocol truncates at message
+		// boundaries. A content marker inside one message would cache the
+		// dynamic suffix too, so split the original message while preserving
+		// its role and byte-for-byte content order.
+		for _, breakpoint := range breakpoints {
+			if dynamicMessageIndex, ok := applyCacheControlAtMessageBoundary(payload, breakpoint, marker); ok {
+				remaining--
+				customApplied = true
+				customMessageIndexes[dynamicMessageIndex] = struct{}{}
+				break
+			}
+		}
+	} else {
+		for _, breakpoint := range breakpoints {
+			if remaining == 0 {
+				break
+			}
+			if applyCacheControlAtTextOffset(payload["messages"], breakpoint, marker) {
+				remaining--
+				customApplied = true
+				customMessageIndexes[breakpoint.MessageIndex] = struct{}{}
+			}
+		}
+	}
+	if requireCustomBreakpoint && !customApplied {
+		return false
+	}
+	applied := customApplied
+	if remaining > 0 && applyCacheControlToInstructionMessages(payload["messages"], marker) {
+		remaining--
+		applied = true
+	}
+	if remaining > 0 && applyCacheControlToLastTool(payload["tools"], marker) {
+		remaining--
+		applied = true
+	}
+	if remaining > 0 && applyCacheControlToLastConversationMessage(payload["messages"], marker, customMessageIndexes) {
+		applied = true
+	}
+	return applied
 }
 
-func applyCacheControlToInstructionMessages(raw any, marker *cacheControlMarker) {
+func applyCacheControlAtMessageBoundary(
+	payload map[string]any,
+	breakpoint PromptCacheBreakpoint,
+	marker *cacheControlMarker,
+) (int, bool) {
+	messages, ok := payload["messages"].([]any)
+	if !ok || breakpoint.MessageIndex < 0 || breakpoint.MessageIndex >= len(messages) {
+		return 0, false
+	}
+	message, ok := messages[breakpoint.MessageIndex].(map[string]any)
+	if !ok {
+		return 0, false
+	}
+	role, _ := message["role"].(string)
+	content, ok := message["content"].(string)
+	if !ok || role != "user" || breakpoint.ByteOffset <= 0 || breakpoint.ByteOffset > len(content) {
+		return 0, false
+	}
+	prefix := content[:breakpoint.ByteOffset]
+	if !utf8.ValidString(prefix) {
+		return 0, false
+	}
+	stableMessage := map[string]any{
+		"role": role,
+		"content": []any{map[string]any{
+			"type":          "text",
+			"text":          prefix,
+			"cache_control": marker,
+		}},
+	}
+	dynamicMessage := make(map[string]any, len(message))
+	for key, value := range message {
+		dynamicMessage[key] = value
+	}
+	dynamicMessage["content"] = content[breakpoint.ByteOffset:]
+	rewritten := make([]any, 0, len(messages)+1)
+	rewritten = append(rewritten, messages[:breakpoint.MessageIndex]...)
+	rewritten = append(rewritten, stableMessage, dynamicMessage)
+	rewritten = append(rewritten, messages[breakpoint.MessageIndex+1:]...)
+	payload["messages"] = rewritten
+	return breakpoint.MessageIndex + 1, true
+}
+
+func applyCacheControlAtTextOffset(
+	raw any,
+	breakpoint PromptCacheBreakpoint,
+	marker *cacheControlMarker,
+) bool {
+	messages, ok := raw.([]any)
+	if !ok || breakpoint.MessageIndex < 0 || breakpoint.MessageIndex >= len(messages) {
+		return false
+	}
+	msg, ok := messages[breakpoint.MessageIndex].(map[string]any)
+	if !ok {
+		return false
+	}
+	content, ok := msg["content"].(string)
+	if !ok || breakpoint.ByteOffset <= 0 || breakpoint.ByteOffset > len(content) {
+		return false
+	}
+	prefix := content[:breakpoint.ByteOffset]
+	if !utf8.ValidString(prefix) {
+		return false
+	}
+	parts := []any{map[string]any{
+		"type":          "text",
+		"text":          prefix,
+		"cache_control": marker,
+	}}
+	if suffix := content[breakpoint.ByteOffset:]; suffix != "" {
+		parts = append(parts, map[string]any{"type": "text", "text": suffix})
+	}
+	msg["content"] = parts
+	return true
+}
+
+func applyCacheControlToInstructionMessages(raw any, marker *cacheControlMarker) bool {
 	messages, ok := raw.([]any)
 	if !ok {
-		return
+		return false
 	}
 	for _, item := range messages {
 		msg, ok := item.(map[string]any)
@@ -300,18 +462,25 @@ func applyCacheControlToInstructionMessages(raw any, marker *cacheControlMarker)
 		}
 		role, _ := msg["role"].(string)
 		if role == "system" || role == "developer" {
-			addCacheControlToMessageContent(msg, marker)
-			return
+			return addCacheControlToMessageContent(msg, marker)
 		}
 	}
+	return false
 }
 
-func applyCacheControlToLastConversationMessage(raw any, marker *cacheControlMarker) {
+func applyCacheControlToLastConversationMessage(
+	raw any,
+	marker *cacheControlMarker,
+	excludedMessageIndexes map[int]struct{},
+) bool {
 	messages, ok := raw.([]any)
 	if !ok {
-		return
+		return false
 	}
 	for i := len(messages) - 1; i >= 0; i-- {
+		if _, excluded := excludedMessageIndexes[i]; excluded {
+			continue
+		}
 		msg, ok := messages[i].(map[string]any)
 		if !ok {
 			continue
@@ -319,22 +488,27 @@ func applyCacheControlToLastConversationMessage(raw any, marker *cacheControlMar
 		role, _ := msg["role"].(string)
 		if role == "user" || role == "assistant" || role == "tool" {
 			if addCacheControlToMessageContent(msg, marker) {
-				return
+				return true
 			}
 		}
 	}
+	return false
 }
 
-func applyCacheControlToLastTool(raw any, marker *cacheControlMarker) {
+func applyCacheControlToLastTool(raw any, marker *cacheControlMarker) bool {
 	tools, ok := raw.([]any)
 	if !ok || len(tools) == 0 {
-		return
+		return false
 	}
 	last, ok := tools[len(tools)-1].(map[string]any)
 	if !ok {
-		return
+		return false
+	}
+	if _, exists := last["cache_control"]; exists {
+		return false
 	}
 	last["cache_control"] = marker
+	return true
 }
 
 func addCacheControlToMessageContent(msg map[string]any, marker *cacheControlMarker) bool {
@@ -365,6 +539,9 @@ func addCacheControlToMessageContent(msg map[string]any, marker *cacheControlMar
 			continue
 		}
 		if partType, _ := part["type"].(string); partType == "text" || partType == "tool_result" {
+			if _, exists := part["cache_control"]; exists {
+				continue
+			}
 			part["cache_control"] = marker
 			return true
 		}

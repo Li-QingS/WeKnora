@@ -8,6 +8,40 @@
 
 这些数字来自固定 benchmark 和竞态测试，表示对应工作负载的改进，不等同于对未来线上流量的预测。上线后的真实新增收益可以通过模型用量页面的“格式归一命中”和“请求合并”直接观察。
 
+## 优化作用在哪个阶段
+
+这一轮提升的是 **Embedding 向量生成阶段**。全局缓存包装器安装在配置模型的 `Embed`/`BatchEmbed` 调用外层，因此覆盖：
+
+- 文档入库、重建索引时的 Chunk 向量化；
+- RAG 查询时的 Query 向量化；
+- Wiki 分类、Wiki 评测等复用同一 Embedding 模型的向量计算。
+
+它不缓存大模型生成的 Wiki 页面、实体/概念候选或引用抽取结果。Wiki LLM 生成阶段的 Prompt Cache 是后一项独立优化，读取复用率按 `cache_read_tokens / prompt_tokens` 统计；显式缓存写入也包含在 `prompt_tokens` 中。
+
+## 修改位置
+
+| 位置 | 修改内容 |
+|---|---|
+| `internal/models/embedding/cache_text.go` | 定义保守的文本规范化规则 |
+| `internal/models/embedding/cache_wrapper.go` | 规范键查询、旧键惰性提升、Batch 去重、Provider 回填和异常降级 |
+| `internal/models/embedding/cache_flight.go` | 合并同进程并发冷请求，并让等待者各自响应 Context 取消 |
+| `internal/models/embedding/cache.go`、`internal/types/embedding_cache.go` | 增加格式归一命中、合并请求和 Provider 调用统计 |
+| `frontend/src/views/settings/ModelUsageSettings.vue` | 在模型用量页面展示新增缓存指标 |
+| `cmd/embedding-cache-benchmark/main.go` | 固定数据集复现工具 |
+
+本轮核心代码提交为 `13ea76a3`，没有数据库迁移。
+
+## 修改前后对比
+
+| 场景 | 修改前 | 修改后 | 提升 |
+|---|---:|---:|---:|
+| 固定格式漂移数据命中率 | 33.33% | 66.67% | +33.33 个百分点 |
+| 同场景 Provider 输入数 | 270 | 135 | -50.00% |
+| 32 个并发相同冷请求的 Provider 调用 | 32 | 1 | -96.875% |
+| 16 个并发双输入 Batch 的 Provider 调用 | 16 | 1 | -93.75% |
+
+这里的“修改前”由 benchmark 关闭新增规范化、Batch 去重和并发合并能力后运行同一批输入得到；“修改后”开启这些能力。开发库 56.09% 的历史持久复用占比是长期 SQL 基线，不应与这组受控对照直接相减。
+
 ## 开发前真实数据基线
 
 2026-09-10 对本机开发 PostgreSQL 执行只读统计：

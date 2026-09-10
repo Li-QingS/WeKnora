@@ -391,8 +391,8 @@ type wikiIngestService struct {
 	// llmRequests coalesces byte-identical concurrent prompts within this
 	// process. Keys include tenant and model to preserve isolation.
 	llmRequests singleflight.Group
-	// promptWarmups serializes only the first request for a reusable Wiki page
-	// prefix. Other prefixes and already-warmed cohorts stay parallel.
+	// promptWarmups serializes only the first request for a reusable Wiki
+	// generation prefix. Other prefixes and already-warmed cohorts stay parallel.
 	promptWarmups sync.Map
 }
 
@@ -2607,14 +2607,19 @@ func (s *wikiIngestService) generateWithTemplate(ctx context.Context, chatModel 
 	opts := &chat.ChatOptions{Temperature: 0.3, Thinking: &thinking, MaxTokens: wikiLLMMaxTokens}
 	prefixFingerprint := chat.PromptPrefixFingerprint(messages, opts)
 	warmupKey := ""
-	if promptTpl == agent.WikiPageModifyUserPrompt {
-		prefixFingerprint = chat.FingerprintPromptPrefix(
-			messages[0].Content, maskedData["SharedSourceContexts"],
-		)
+	if breakpoint, stablePrefix, ok := wikiPromptCacheBreakpoint(promptTpl, messages); ok {
+		opts.PromptCacheBreakpoints = []chat.PromptCacheBreakpoint{breakpoint}
+		prefixParts := make([]string, 0, breakpoint.MessageIndex+1)
+		for index := 0; index < breakpoint.MessageIndex; index++ {
+			prefixParts = append(prefixParts, messages[index].Content)
+		}
+		prefixParts = append(prefixParts, stablePrefix)
+		prefixFingerprint = chat.FingerprintPromptPrefix(prefixParts...)
 		if tenantID, ok := types.TenantIDFromContext(ctx); ok {
 			warmupKey = chat.BuildPromptCacheKey(
 				tenantID, chatModel.GetModelID(), purpose, prefixFingerprint,
 			)
+			opts.PromptCacheKey = warmupKey
 		}
 	}
 	ctx = types.WithLLMCallMetadata(ctx, purpose, prefixFingerprint)
@@ -2631,7 +2636,7 @@ func (s *wikiIngestService) generateWithTemplate(ctx context.Context, chatModel 
 
 	execute := func() (interface{}, error) {
 		releaseWarmup := func() {}
-		if tenantScoped && promptTpl == agent.WikiPageModifyUserPrompt && strings.TrimSpace(maskedData["SharedSourceContexts"]) != "" {
+		if tenantScoped && warmupKey != "" {
 			var warmupErr error
 			releaseWarmup, warmupErr = s.awaitWikiPromptWarmup(ctx, warmupKey)
 			if warmupErr != nil {
@@ -2695,6 +2700,34 @@ func (s *wikiIngestService) generateWithTemplate(ctx context.Context, chatModel 
 		content, _ := result.Val.(string)
 		return unmaskImageURLs(content, urlMap), nil
 	}
+}
+
+func wikiPromptCacheBreakpoint(
+	promptTpl string,
+	messages []chat.Message,
+) (chat.PromptCacheBreakpoint, string, bool) {
+	messageIndex := -1
+	dynamicMarker := ""
+	switch promptTpl {
+	case agent.WikiPageModifyUserPrompt:
+		messageIndex = 1
+		dynamicMarker = "\n<page_metadata>\n  <slug>"
+	case agent.WikiChunkCitationPrompt:
+		messageIndex = 0
+		dynamicMarker = "\n<chunks>\n"
+	default:
+		return chat.PromptCacheBreakpoint{}, "", false
+	}
+	if messageIndex >= len(messages) {
+		return chat.PromptCacheBreakpoint{}, "", false
+	}
+	prompt := messages[messageIndex].Content
+	offset := strings.Index(prompt, dynamicMarker)
+	if offset < 0 {
+		return chat.PromptCacheBreakpoint{}, "", false
+	}
+	offset++ // Keep the separator newline in the stable prefix; split at the opening tag.
+	return chat.PromptCacheBreakpoint{MessageIndex: messageIndex, ByteOffset: offset}, prompt[:offset], true
 }
 
 func wikiPromptPurpose(promptTpl string) string {

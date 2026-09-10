@@ -49,6 +49,17 @@ type ChatOptions struct {
 	// markers; empty/short is the default 5-minute cache; long requests 1h/24h
 	// where the provider accepts it.
 	CacheRetention CacheRetention `json:"-"`
+	// PromptCacheBreakpoints identifies stable prefixes inside string message
+	// content. Provider adapters translate ByteOffset to their native content-
+	// block or message-boundary protocol; other providers keep the request intact.
+	PromptCacheBreakpoints []PromptCacheBreakpoint `json:"-"`
+}
+
+// PromptCacheBreakpoint describes a cache boundary in the original UTF-8
+// message text. ByteOffset must land on a rune boundary and be greater than 0.
+type PromptCacheBreakpoint struct {
+	MessageIndex int
+	ByteOffset   int
 }
 
 // MessageContentPart represents a part of multi-content message

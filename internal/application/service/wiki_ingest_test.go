@@ -399,8 +399,63 @@ func TestGenerateWikiPageModifyUsesCacheableMessageLayout(t *testing.T) {
 	if !strings.HasPrefix(model.messages[1].Content, "<shared_source_contexts>") {
 		t.Fatalf("shared source context must lead user message: %q", model.messages[1].Content)
 	}
+	if len(model.options.PromptCacheBreakpoints) != 1 {
+		t.Fatalf("expected one prompt cache breakpoint, got %#v", model.options.PromptCacheBreakpoints)
+	}
+	breakpoint := model.options.PromptCacheBreakpoints[0]
+	wantOffset := strings.Index(model.messages[1].Content, "\n<page_metadata>\n  <slug>") + 1
+	if breakpoint.MessageIndex != 1 || breakpoint.ByteOffset != wantOffset {
+		t.Fatalf("unexpected page cache breakpoint: got %#v, want message=1 offset=%d", breakpoint, wantOffset)
+	}
+	if model.messages[1].Content[:breakpoint.ByteOffset]+model.messages[1].Content[breakpoint.ByteOffset:] != model.messages[1].Content {
+		t.Fatal("page prompt changed across the cache boundary")
+	}
 	if model.purpose != "wiki_page_modify" || model.prefix == "" {
 		t.Fatalf("missing cache metadata: purpose=%q prefix=%q", model.purpose, model.prefix)
+	}
+	if model.options.PromptCacheKey == "" {
+		t.Fatal("page generation must expose its stable prefix as a provider routing key")
+	}
+}
+
+func TestGenerateWikiChunkCitationMarksStableCandidatePrefix(t *testing.T) {
+	model := &templateCaptureChatModel{response: `{"citations":{},"new_slugs":[]}`}
+	service := &wikiIngestService{}
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
+	_, err := service.generateWithTemplate(ctx, model, agent.WikiChunkCitationPrompt, map[string]string{
+		"Language":         "English",
+		"CandidateSlugs":   "concept/alpha (Alpha)",
+		"ChunksXML":        `<c id="c001">dynamic evidence</c>`,
+		"InstructionScope": "wiki_content",
+	})
+	if err != nil {
+		t.Fatalf("generateWithTemplate() error = %v", err)
+	}
+	if len(model.messages) != 1 || model.messages[0].Role != "user" {
+		t.Fatalf("unexpected citation message layout: %#v", model.messages)
+	}
+	if len(model.options.PromptCacheBreakpoints) != 1 {
+		t.Fatalf("expected one prompt cache breakpoint, got %#v", model.options.PromptCacheBreakpoints)
+	}
+	breakpoint := model.options.PromptCacheBreakpoints[0]
+	wantOffset := strings.Index(model.messages[0].Content, "\n<chunks>\n") + 1
+	if breakpoint.MessageIndex != 0 || breakpoint.ByteOffset != wantOffset {
+		t.Fatalf("unexpected citation cache breakpoint: got %#v, want message=0 offset=%d", breakpoint, wantOffset)
+	}
+	if !strings.Contains(model.messages[0].Content[:breakpoint.ByteOffset], "concept/alpha (Alpha)") {
+		t.Fatal("candidate slugs must be included in the stable citation prefix")
+	}
+	if strings.Contains(model.messages[0].Content[:breakpoint.ByteOffset], "dynamic evidence") {
+		t.Fatal("dynamic chunks leaked into the stable citation prefix")
+	}
+	if model.messages[0].Content[:breakpoint.ByteOffset]+model.messages[0].Content[breakpoint.ByteOffset:] != model.messages[0].Content {
+		t.Fatal("citation prompt changed across the cache boundary")
+	}
+	if model.purpose != "wiki_chunk_citation" || model.prefix == "" {
+		t.Fatalf("missing cache metadata: purpose=%q prefix=%q", model.purpose, model.prefix)
+	}
+	if model.options.PromptCacheKey == "" {
+		t.Fatal("citation extraction must expose its stable prefix as a provider routing key")
 	}
 }
 

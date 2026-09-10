@@ -312,6 +312,32 @@ func TestAnthropicChat_CacheRetentionNoneKeepsPlainStrings(t *testing.T) {
 	assert.Equal(t, "Hi", capturedRequest.Messages[0].Content)
 }
 
+func TestAnthropicBuildRequestAppliesCustomPromptCacheBreakpoint(t *testing.T) {
+	c := &AnthropicChat{modelName: "claude-sonnet-4-5"}
+	prompt := "stable prefix<chunks>dynamic"
+	messages := []Message{
+		{Role: "system", Content: "stable system"},
+		{Role: "user", Content: prompt},
+	}
+	req := c.buildRequest(context.Background(), messages, &ChatOptions{
+		PromptCacheBreakpoints: []PromptCacheBreakpoint{{
+			MessageIndex: 1,
+			ByteOffset:   len("stable prefix"),
+		}},
+	})
+
+	systemBlocks, ok := req.System.([]anthropicContentBlock)
+	require.True(t, ok)
+	require.Len(t, systemBlocks, 1)
+	require.NotNil(t, systemBlocks[0].CacheControl)
+	contentBlocks, ok := req.Messages[0].Content.([]anthropicContentBlock)
+	require.True(t, ok)
+	require.Len(t, contentBlocks, 2)
+	assert.Equal(t, prompt, contentBlocks[0].Text+contentBlocks[1].Text)
+	require.NotNil(t, contentBlocks[0].CacheControl)
+	require.Nil(t, contentBlocks[1].CacheControl)
+}
+
 func firstTextAndCache(t *testing.T, v any) (string, map[string]any) {
 	t.Helper()
 	switch x := v.(type) {

@@ -53,10 +53,11 @@ func anthropicToolOptions(req *anthropicRequest, opts *ChatOptions) {
 
 // Tool calls are assistant content blocks; all parallel results belong in the
 // immediately following user message. Keep IDs, JSON and empty tool results.
-func anthropicMessages(messages []Message) ([]string, []anthropicMessage) {
+func anthropicMessages(messages []Message) ([]string, []anthropicMessage, map[int]int) {
 	var system []string
 	var result []anthropicMessage
-	for _, msg := range messages {
+	originalToConverted := make(map[int]int, len(messages))
+	for messageIndex, msg := range messages {
 		content := strings.TrimSpace(msg.Content)
 		if content == "" {
 			content = textFromMultiContent(msg.MultiContent)
@@ -82,16 +83,19 @@ func anthropicMessages(messages []Message) ([]string, []anthropicMessage) {
 				)
 			}
 			result = append(result, anthropicMessage{Role: "assistant", Content: blocks})
+			originalToConverted[messageIndex] = len(result) - 1
 		case msg.Role == "tool":
 			block := anthropicContentBlock{Type: "tool_result", ToolUseID: msg.ToolCallID, Content: msg.Content}
 			if len(result) > 0 && result[len(result)-1].Role == "user" {
 				if blocks, ok := result[len(result)-1].Content.([]anthropicContentBlock); ok && len(blocks) > 0 &&
 					blocks[0].Type == "tool_result" {
 					result[len(result)-1].Content = append(blocks, block)
+					originalToConverted[messageIndex] = len(result) - 1
 					continue
 				}
 			}
 			result = append(result, anthropicMessage{Role: "user", Content: []anthropicContentBlock{block}})
+			originalToConverted[messageIndex] = len(result) - 1
 		default:
 			if content == "" {
 				continue
@@ -101,9 +105,10 @@ func anthropicMessages(messages []Message) ([]string, []anthropicMessage) {
 				role = "assistant"
 			}
 			result = append(result, anthropicMessage{Role: role, Content: content})
+			originalToConverted[messageIndex] = len(result) - 1
 		}
 	}
-	return system, result
+	return system, result, originalToConverted
 }
 
 type anthropicToolInput struct {

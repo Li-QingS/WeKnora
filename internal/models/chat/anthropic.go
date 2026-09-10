@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/models/provider"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -295,7 +296,7 @@ func (c *AnthropicChat) buildRequest(_ context.Context, messages []Message, opts
 	}
 
 	anthropicToolOptions(&req, opts)
-	systemParts, converted := anthropicMessages(messages)
+	systemParts, converted, originalToConverted := anthropicMessages(messages)
 	req.Messages = converted
 
 	systemText := strings.Join(systemParts, "\n\n")
@@ -305,22 +306,72 @@ func (c *AnthropicChat) buildRequest(_ context.Context, messages []Message, opts
 		req.System = systemText
 		return req
 	}
+	cacheControl := &anthropicCacheControl{Type: marker.Type, TTL: marker.TTL}
+	remaining := maxCacheControlBreakpoints
+	customMessageIndexes := make(map[int]struct{})
 	if systemText != "" {
 		req.System = []anthropicContentBlock{{
 			Type:         "text",
 			Text:         systemText,
-			CacheControl: &anthropicCacheControl{Type: marker.Type, TTL: marker.TTL},
+			CacheControl: cacheControl,
 		}}
+		remaining--
 	}
-	if len(req.Messages) > 0 {
-		last := &req.Messages[len(req.Messages)-1]
+	if opts != nil {
+		for _, breakpoint := range opts.PromptCacheBreakpoints {
+			if remaining == 0 {
+				break
+			}
+			convertedIndex, ok := originalToConverted[breakpoint.MessageIndex]
+			if !ok || breakpoint.MessageIndex < 0 || breakpoint.MessageIndex >= len(messages) {
+				continue
+			}
+			original := messages[breakpoint.MessageIndex].Content
+			trimmed := strings.TrimSpace(original)
+			leadingBytes := strings.Index(original, trimmed)
+			adjustedOffset := breakpoint.ByteOffset - leadingBytes
+			if leadingBytes < 0 || adjustedOffset <= 0 || adjustedOffset > len(trimmed) || !utf8.ValidString(trimmed[:adjustedOffset]) {
+				continue
+			}
+			message := &req.Messages[convertedIndex]
+			text, ok := message.Content.(string)
+			if !ok || text != trimmed {
+				continue
+			}
+			blocks := []anthropicContentBlock{{
+				Type:         "text",
+				Text:         text[:adjustedOffset],
+				CacheControl: cacheControl,
+			}}
+			if suffix := text[adjustedOffset:]; suffix != "" {
+				blocks = append(blocks, anthropicContentBlock{Type: "text", Text: suffix})
+			}
+			message.Content = blocks
+			remaining--
+			customMessageIndexes[convertedIndex] = struct{}{}
+		}
+	}
+	for messageIndex := len(req.Messages) - 1; remaining > 0 && messageIndex >= 0; messageIndex-- {
+		if _, excluded := customMessageIndexes[messageIndex]; excluded {
+			continue
+		}
+		last := &req.Messages[messageIndex]
 		if text, ok := last.Content.(string); ok && text != "" {
 			last.Content = []anthropicContentBlock{{
 				Type:         "text",
 				Text:         text,
-				CacheControl: &anthropicCacheControl{Type: marker.Type, TTL: marker.TTL},
+				CacheControl: cacheControl,
 			}}
+		} else if blocks, ok := last.Content.([]anthropicContentBlock); ok {
+			for index := len(blocks) - 1; index >= 0; index-- {
+				if (blocks[index].Type == "text" || blocks[index].Type == "tool_result") && blocks[index].CacheControl == nil {
+					blocks[index].CacheControl = cacheControl
+					last.Content = blocks
+					break
+				}
+			}
 		}
+		break
 	}
 	return req
 }

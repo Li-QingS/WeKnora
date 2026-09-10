@@ -293,7 +293,7 @@ const modelFilterOptions = computed(() => {
 
 function chatCacheRate(item: ModelCallSummaryItem): string {
   if (item.model_type !== 'KnowledgeQA') return '-'
-  const denominator = item.cache_read_tokens + item.cache_miss_tokens
+  const denominator = item.prompt_tokens
   if (denominator <= 0) return '-'
   return `${((item.cache_read_tokens / denominator) * 100).toFixed(1)}%`
 }

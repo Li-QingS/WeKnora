@@ -154,7 +154,11 @@ func (c *RemoteAPIChat) buildOutbound(
 	retention := resolveCacheRetention(opts)
 	policy := promptCachePolicyFor(c.provider, c.baseURL)
 	sessionID := promptCacheSessionID(ctx, opts)
-	cachedBody, forceRaw, err := applyPromptCacheToJSONBody(body, policy, sessionID, retention)
+	var breakpoints []PromptCacheBreakpoint
+	if opts != nil {
+		breakpoints = opts.PromptCacheBreakpoints
+	}
+	cachedBody, forceRaw, err := applyPromptCacheToJSONBody(body, policy, sessionID, retention, breakpoints...)
 	if err != nil {
 		return nil, "", false, err
 	}
